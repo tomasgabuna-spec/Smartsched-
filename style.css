@@ -707,10 +707,42 @@ tbody tr:hover {
     border-top: 1px solid var(--border);
     font-size: 11px;
     text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    position: relative;
 }
 
 .time-slot.break {
     background: #fff7e8;
+    color: var(--warning);
+}
+
+.slot-actions {
+    display: none;
+    gap: 4px;
+}
+
+.time-slot:hover .slot-actions {
+    display: inline-flex;
+}
+
+.slot-action-btn {
+    border: 0;
+    background: #eef1ff;
+    color: var(--primary);
+    width: 18px;
+    height: 18px;
+    line-height: 18px;
+    padding: 0;
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+}
+
+.time-slot.break .slot-action-btn {
+    background: #fff0d1;
     color: var(--warning);
 }
 

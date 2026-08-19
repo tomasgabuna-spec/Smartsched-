@@ -810,7 +810,7 @@ function renderTimeSlots() {
 
     grid.innerHTML = "";
 
-    days.forEach(day => {
+    days.forEach((day, dayIndex) => {
 
         const column =
             document.createElement("div");
@@ -822,14 +822,28 @@ function renderTimeSlots() {
 
         db.timeslots.forEach(slot => {
 
+            const isFirstDay = dayIndex === 0;
+
             html += `
 
                 <div class="time-slot
                     ${slot.type === "break" ? "break" : ""}">
 
-                    ${slot.time}
+                    <span>
+                        ${slot.time}
+                        ${slot.type === "break" ? " · BREAK" : ""}
+                    </span>
 
-                    ${slot.type === "break" ? " · BREAK" : ""}
+                    ${isFirstDay ? `
+                        <span class="slot-actions">
+                            <button class="slot-action-btn"
+                                title="Edit"
+                                onclick="editTimeSlot(${slot.id})">✎</button>
+                            <button class="slot-action-btn"
+                                title="Delete"
+                                onclick="deleteTimeSlot(${slot.id})">✕</button>
+                        </span>
+                    ` : ""}
 
                 </div>
 
@@ -853,13 +867,16 @@ function addTimeSlot() {
 
     if (!time) return;
 
+    const isBreak =
+        confirm("Is this a break period? Click OK for Break, Cancel for Class.");
+
     db.timeslots.push({
 
         id: Date.now(),
 
         time: time,
 
-        type: "class"
+        type: isBreak ? "break" : "class"
 
     });
 
@@ -868,6 +885,50 @@ function addTimeSlot() {
     renderTimeSlots();
 
     toast("Time slot added.");
+
+}
+
+
+function editTimeSlot(id) {
+
+    const slot =
+        db.timeslots.find(s => s.id === id);
+
+    if (!slot) return;
+
+    const time =
+        prompt("Edit time slot:", slot.time);
+
+    if (!time) return;
+
+    slot.time = time;
+
+    const isBreak =
+        confirm("Is this a break period? Click OK for Break, Cancel for Class.");
+
+    slot.type = isBreak ? "break" : "class";
+
+    saveDB();
+
+    renderTimeSlots();
+
+    toast("Time slot updated.");
+
+}
+
+
+function deleteTimeSlot(id) {
+
+    if (!confirm("Delete this time slot for all days?")) return;
+
+    db.timeslots =
+        db.timeslots.filter(s => s.id !== id);
+
+    saveDB();
+
+    renderTimeSlots();
+
+    toast("Time slot deleted.");
 
 }
 
