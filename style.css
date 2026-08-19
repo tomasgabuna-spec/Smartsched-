@@ -602,6 +602,11 @@ tbody tr:hover {
     font-weight: 700;
 }
 
+.table-status.muted {
+    background: #f1f2f6;
+    color: var(--muted);
+}
+
 .action-btn {
     border: 0;
     background: #eef1ff;
@@ -1148,6 +1153,13 @@ tbody tr:hover {
 
 .modal-submit {
     margin-top: 10px;
+}
+
+.form-hint {
+    margin-top: -6px;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.4;
 }
 
 

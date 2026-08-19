@@ -210,6 +210,14 @@ function renderTeachers() {
                     ? Math.round((assigned / t.maxHours) * 100)
                     : 0;
 
+            const room =
+                db.rooms.find(r => r.id === t.roomId);
+
+            const advisory =
+                t.isAdviser
+                    ? db.sections.find(s => s.id === t.advisorySectionId)
+                    : null;
+
             const row = document.createElement("tr");
 
             row.innerHTML = `
@@ -220,6 +228,14 @@ function renderTeachers() {
                 </td>
 
                 <td>${t.department || "General"}</td>
+
+                <td>${room ? room.name : "<em>Auto-assign</em>"}</td>
+
+                <td>
+                    ${advisory
+                        ? `<span class="table-status">Adviser · ${advisory.grade} ${advisory.name}</span>`
+                        : `<span class="table-status muted">Non-Adviser</span>`}
+                </td>
 
                 <td>${t.maxHours} hrs</td>
 
@@ -249,6 +265,20 @@ function renderTeachers() {
 
 function openTeacherModal() {
 
+    const roomOptions =
+        db.rooms.map(r =>
+            `<option value="${r.id}">
+                ${r.name} (${r.type})
+            </option>`
+        ).join("");
+
+    const sectionOptions =
+        db.sections.map(s =>
+            `<option value="${s.id}">
+                ${s.grade} - ${s.name}
+            </option>`
+        ).join("");
+
     openModal(
         "Add Teacher",
         `
@@ -277,6 +307,24 @@ function openTeacherModal() {
                 value="30"
                 min="1">
 
+            <label>Designated Classroom</label>
+
+            <select id="teacherRoom">
+                <option value="">— Auto-assign a classroom —</option>
+                ${roomOptions}
+            </select>
+            <small class="form-hint">
+                The section rotates to this teacher's room for every period.
+                (Not used for PE — PE always meets in the Gym.)
+            </small>
+
+            <label>Class Adviser Of</label>
+
+            <select id="teacherAdvisory">
+                <option value="">— Not a Class Adviser —</option>
+                ${sectionOptions}
+            </select>
+
             <button class="primary-btn modal-submit">
                 Add Teacher
             </button>
@@ -291,6 +339,29 @@ function openTeacherModal() {
 function addTeacher(event) {
 
     event.preventDefault();
+
+    const roomValue =
+        document.getElementById("teacherRoom").value;
+
+    const advisoryValue =
+        document.getElementById("teacherAdvisory").value;
+
+    if (advisoryValue) {
+
+        const existingAdviser =
+            db.teachers.find(
+                t => t.advisorySectionId === Number(advisoryValue)
+            );
+
+        if (existingAdviser) {
+
+            toast(
+                `Note: ${existingAdviser.name} is already the adviser of that section.`
+            );
+
+        }
+
+    }
 
     db.teachers.push({
 
@@ -308,7 +379,16 @@ function addTeacher(event) {
         maxHours:
             Number(
                 document.getElementById("teacherHours").value
-            )
+            ),
+
+        roomId:
+            roomValue ? Number(roomValue) : null,
+
+        isAdviser:
+            !!advisoryValue,
+
+        advisorySectionId:
+            advisoryValue ? Number(advisoryValue) : null
 
     });
 
@@ -517,6 +597,11 @@ function renderSections() {
 
     db.sections.forEach(s => {
 
+        const adviser =
+            db.teachers.find(
+                t => t.isAdviser && t.advisorySectionId === s.id
+            );
+
         const row = document.createElement("tr");
 
         row.innerHTML = `
@@ -526,6 +611,12 @@ function renderSections() {
             <td><strong>${s.name}</strong></td>
 
             <td>${s.students}</td>
+
+            <td>
+                ${adviser
+                    ? `<span class="table-status">${adviser.name}</span>`
+                    : `<span class="table-status muted">Unassigned</span>`}
+            </td>
 
             <td>
                 <span class="table-status">
@@ -624,6 +715,20 @@ function deleteSection(id) {
 
     db.sections =
         db.sections.filter(s => s.id !== id);
+
+    /*
+     Any teacher advising this section
+     is no longer an adviser of anything.
+    */
+
+    db.teachers.forEach(t => {
+
+        if (t.advisorySectionId === id) {
+            t.isAdviser = false;
+            t.advisorySectionId = null;
+        }
+
+    });
 
     saveDB();
 
@@ -789,6 +894,19 @@ function deleteRoom(id) {
 
     db.rooms =
         db.rooms.filter(r => r.id !== id);
+
+    /*
+     Teachers whose designated classroom was
+     deleted fall back to auto-assignment.
+    */
+
+    db.teachers.forEach(t => {
+
+        if (t.roomId === id) {
+            t.roomId = null;
+        }
+
+    });
 
     saveDB();
 
@@ -1142,9 +1260,14 @@ function generateSchedule() {
 
         db.schedule = [];
 
-        let slotIndex = 0;
+        const classSlots =
+            db.timeslots.filter(
+                s => s.type === "class"
+            );
 
-        db.assignments.forEach(assignment => {
+        const unplaced = [];
+
+        db.assignments.forEach((assignment, assignmentIndex) => {
 
             const subject =
                 db.subjects.find(
@@ -1165,37 +1288,165 @@ function generateSchedule() {
                 return;
             }
 
-            let requiredHours =
+            const requiredMeetings =
                 Number(assignment.hours);
 
-            while (requiredHours > 0) {
+            if (requiredMeetings <= 0 || classSlots.length === 0) {
+                return;
+            }
 
-                let placed = false;
+            const isPE = isPESubject(subject);
 
-                for (
-                    let attempt = 0;
-                    attempt < 100 && !placed;
-                    attempt++
-                ) {
+            /*
+             SECTIONS ROTATE, TEACHERS DON'T.
+             Every non-PE class this teacher gives happens in
+             their one designated classroom. PE always happens
+             in the Gym instead, since the gym is a shared,
+             fixed venue rather than any single teacher's room.
+            */
 
-                    const day =
-                        days[
-                            (slotIndex + attempt) %
-                            days.length
-                        ];
+            const fixedRoom =
+                isPE
+                    ? null
+                    : resolveTeacherRoom(teacher, subject, section);
 
-                    const classSlots =
-                        db.timeslots.filter(
-                            s => s.type === "class"
+            if (!isPE && !fixedRoom) {
+
+                unplaced.push(
+                    `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): no suitable classroom available`
+                );
+
+                return;
+
+            }
+
+            let placed = false;
+
+            /*
+             PARALLEL SCHEDULING:
+             try to find ONE period that is free across enough
+             days of the week, so the subject always meets at
+             the same period (e.g. Monday–Friday, Period 1).
+            */
+
+            for (
+                let attempt = 0;
+                attempt < classSlots.length && !placed;
+                attempt++
+            ) {
+
+                const slot =
+                    classSlots[
+                        (assignmentIndex + attempt) %
+                        classSlots.length
+                    ];
+
+                const availableDays = [];
+
+                for (const day of days) {
+
+                    const teacherBusy =
+                        db.schedule.some(
+                            x =>
+                                x.teacherId === teacher.id &&
+                                x.day === day &&
+                                x.slotId === slot.id
                         );
+
+                    if (teacherBusy) continue;
+
+                    const sectionBusy =
+                        db.schedule.some(
+                            x =>
+                                x.sectionId === section.id &&
+                                x.day === day &&
+                                x.slotId === slot.id
+                        );
+
+                    if (sectionBusy) continue;
+
+                    let dayRoom = fixedRoom;
+
+                    if (isPE) {
+
+                        dayRoom =
+                            findAvailableRoomOfType(
+                                section,
+                                "Gym",
+                                day,
+                                slot.id
+                            );
+
+                    } else {
+
+                        const roomBusy =
+                            db.schedule.some(
+                                x =>
+                                    x.roomId === fixedRoom.id &&
+                                    x.day === day &&
+                                    x.slotId === slot.id
+                            );
+
+                        if (roomBusy) dayRoom = null;
+
+                    }
+
+                    if (!dayRoom) continue;
+
+                    availableDays.push({ day, room: dayRoom });
+
+                }
+
+                if (availableDays.length >= requiredMeetings) {
+
+                    availableDays
+                        .slice(0, requiredMeetings)
+                        .forEach(({ day, room }) => {
+
+                            db.schedule.push({
+
+                                id: Date.now() + Math.random(),
+                                day: day,
+                                slotId: slot.id,
+                                teacherId: teacher.id,
+                                subjectId: subject.id,
+                                sectionId: section.id,
+                                roomId: room.id
+
+                            });
+
+                        });
+
+                    placed = true;
+
+                }
+
+            }
+
+            /*
+             FALLBACK — some circumstances just can't follow the
+             clean parallel pattern (e.g. not enough free days at
+             any single period). Place meetings one at a time on
+             a best-effort basis instead of dropping them.
+            */
+
+            if (!placed) {
+
+                let remaining = requiredMeetings;
+                let guard = 0;
+
+                while (remaining > 0 && guard < 300) {
+
+                    guard++;
 
                     const slot =
                         classSlots[
-                            (slotIndex + attempt) %
+                            (assignmentIndex + guard) %
                             classSlots.length
                         ];
 
-                    if (!slot) continue;
+                    const day =
+                        days[guard % days.length];
 
                     const teacherBusy =
                         db.schedule.some(
@@ -1213,60 +1464,70 @@ function generateSchedule() {
                                 x.slotId === slot.id
                         );
 
-                    if (
-                        teacherBusy ||
-                        sectionBusy
-                    ) {
-                        continue;
+                    if (teacherBusy || sectionBusy) continue;
+
+                    let room = null;
+
+                    if (isPE) {
+
+                        room =
+                            findAvailableRoomOfType(
+                                section,
+                                "Gym",
+                                day,
+                                slot.id
+                            );
+
+                    } else {
+
+                        const roomBusy =
+                            db.schedule.some(
+                                x =>
+                                    x.roomId === fixedRoom.id &&
+                                    x.day === day &&
+                                    x.slotId === slot.id
+                            );
+
+                        room =
+                            !roomBusy
+                                ? fixedRoom
+                                : findAvailableRoom(
+                                    subject,
+                                    section,
+                                    day,
+                                    slot.id
+                                );
+
                     }
 
-                    let room =
-                        findAvailableRoom(
-                            subject,
-                            section,
-                            day,
-                            slot.id
-                        );
-
-                    if (!room) {
-                        continue;
-                    }
+                    if (!room) continue;
 
                     db.schedule.push({
 
-                        id: Date.now() +
-                            Math.random(),
-
+                        id: Date.now() + Math.random(),
                         day: day,
-
                         slotId: slot.id,
-
                         teacherId: teacher.id,
-
                         subjectId: subject.id,
-
                         sectionId: section.id,
-
                         roomId: room.id
 
                     });
 
-                    requiredHours--;
-
-                    slotIndex++;
-
-                    placed = true;
+                    remaining--;
 
                 }
 
-                if (!placed) {
+                if (remaining > 0) {
 
-                    console.warn(
-                        "Could not place assignment:",
-                        assignment
+                    unplaced.push(
+                        `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): ${remaining} of ${requiredMeetings} periods could not be placed`
                     );
 
-                    break;
+                    console.warn(
+                        "Could not fully place assignment:",
+                        assignment
+                    );
 
                 }
 
@@ -1280,7 +1541,19 @@ function generateSchedule() {
 
         showPage("schedule");
 
-        toast("Schedule generated successfully.");
+        if (unplaced.length > 0) {
+
+            console.warn("Unplaced assignments:", unplaced);
+
+            toast(
+                `Schedule generated with ${unplaced.length} assignment(s) needing manual review — see console/Conflicts.`
+            );
+
+        } else {
+
+            toast("Schedule generated successfully.");
+
+        }
 
     }, 700);
 
@@ -1288,7 +1561,89 @@ function generateSchedule() {
 
 
 /* =========================================================
-   FIND AVAILABLE ROOM
+   PE / GYM HELPER
+   ========================================================= */
+
+function isPESubject(subject) {
+
+    return !!subject && subject.roomType === "Gym";
+
+}
+
+
+/* =========================================================
+   RESOLVE A TEACHER'S DESIGNATED CLASSROOM
+   ========================================================= */
+
+function resolveTeacherRoom(teacher, subject, section) {
+
+    /*
+     A subject needs a "special" room (Laboratory, Computer
+     Laboratory, etc.) when its roomType isn't just a regular
+     classroom. In that circumstance the teacher's normal
+     designated classroom can't be used — the class must go
+     to the specialized room instead, even though the teacher
+     otherwise stays put in their own room for everything else.
+    */
+
+    const requiresSpecialRoom =
+        subject.roomType &&
+        subject.roomType !== "Regular Classroom" &&
+        subject.roomType !== "Gym";
+
+    const hadDesignatedRoom = !!teacher.roomId;
+
+    if (teacher.roomId) {
+
+        const designated =
+            db.rooms.find(r => r.id === teacher.roomId);
+
+        if (
+            designated &&
+            designated.capacity >= Number(section.students) &&
+            (!requiresSpecialRoom || designated.type === subject.roomType)
+        ) {
+            return designated;
+        }
+
+    }
+
+    if (requiresSpecialRoom) {
+
+        return db.rooms.find(room =>
+            room.type === subject.roomType &&
+            room.capacity >= Number(section.students)
+        ) || null;
+
+    }
+
+    /*
+     Fall back to any fitting regular room. If the teacher
+     already had a designated classroom on record, this is
+     just a one-off substitute for an oversized section — we
+     don't overwrite their permanent room assignment. Only a
+     teacher with NO designated classroom yet gets this room
+     saved as their new permanent one, so they consistently
+     keep the same room going forward.
+    */
+
+    const autoRoom =
+        db.rooms.find(room =>
+            room.type !== "Gym" &&
+            room.capacity >= Number(section.students)
+        ) || null;
+
+    if (autoRoom && !hadDesignatedRoom) {
+        teacher.roomId = autoRoom.id;
+    }
+
+    return autoRoom;
+
+}
+
+
+/* =========================================================
+   FIND AVAILABLE ROOM (generic fallback)
    ========================================================= */
 
 function findAvailableRoom(
@@ -1329,6 +1684,40 @@ function findAvailableRoom(
         return true;
 
     });
+
+}
+
+
+/* =========================================================
+   FIND AVAILABLE ROOM OF A SPECIFIC TYPE (e.g. Gym)
+   ========================================================= */
+
+function findAvailableRoomOfType(
+    section,
+    type,
+    day,
+    slotId
+) {
+
+    return db.rooms.find(room => {
+
+        if (room.type !== type) return false;
+
+        if (room.capacity < Number(section.students)) {
+            return false;
+        }
+
+        const roomBusy =
+            db.schedule.some(
+                x =>
+                    x.roomId === room.id &&
+                    x.day === day &&
+                    x.slotId === slotId
+            );
+
+        return !roomBusy;
+
+    }) || null;
 
 }
 
@@ -2141,7 +2530,10 @@ function loadDemoData() {
             name: "Juan Santos",
             employeeId: "T-001",
             department: "Mathematics",
-            maxHours: 30
+            maxHours: 30,
+            roomId: 1,
+            isAdviser: true,
+            advisorySectionId: 1
         },
 
         {
@@ -2149,7 +2541,10 @@ function loadDemoData() {
             name: "Maria Cruz",
             employeeId: "T-002",
             department: "English",
-            maxHours: 30
+            maxHours: 30,
+            roomId: 2,
+            isAdviser: true,
+            advisorySectionId: 2
         },
 
         {
@@ -2157,7 +2552,10 @@ function loadDemoData() {
             name: "Pedro Reyes",
             employeeId: "T-003",
             department: "Science",
-            maxHours: 30
+            maxHours: 30,
+            roomId: 4,
+            isAdviser: true,
+            advisorySectionId: 3
         },
 
         {
@@ -2165,7 +2563,10 @@ function loadDemoData() {
             name: "Ana Garcia",
             employeeId: "T-004",
             department: "Filipino",
-            maxHours: 30
+            maxHours: 30,
+            roomId: 3,
+            isAdviser: false,
+            advisorySectionId: null
         },
 
         {
@@ -2173,7 +2574,10 @@ function loadDemoData() {
             name: "Mark Dela Cruz",
             employeeId: "T-005",
             department: "PE",
-            maxHours: 30
+            maxHours: 30,
+            roomId: 6,
+            isAdviser: false,
+            advisorySectionId: null
         }
 
     ];
@@ -2284,7 +2688,7 @@ function loadDemoData() {
             id: 3,
             name: "Room 103",
             type: "Regular Classroom",
-            capacity: 40
+            capacity: 45
         },
 
         {
