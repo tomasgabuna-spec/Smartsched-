@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SMARTSCHED - Intelligent School Scheduling System</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<div class="app">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+
+        <div class="brand">
+            <div class="brand-icon">SS</div>
+            <div>
+                <h2>SMARTSCHED</h2>
+                <span>School Scheduling System</span>
+            </div>
+        </div>
+
+        <nav>
+
+            <div class="nav-label">MAIN</div>
+
+            <button class="nav-item active" data-page="dashboard">
+                <span>▦</span> Dashboard
+            </button>
+
+            <div class="nav-label">SETUP</div>
+
+            <button class="nav-item" data-page="teachers">
+                <span>👨‍🏫</span> Teachers
+            </button>
+
+            <button class="nav-item" data-page="subjects">
+                <span>📚</span> Subjects
+            </button>
+
+            <button class="nav-item" data-page="sections">
+                <span>🎓</span> Sections
+            </button>
+
+            <button class="nav-item" data-page="rooms">
+                <span>🏫</span> Classrooms
+            </button>
+
+            <button class="nav-item" data-page="timeslots">
+                <span>🕐</span> Time Slots
+            </button>
+
+            <div class="nav-label">SCHEDULING</div>
+
+            <button class="nav-item" data-page="assignments">
+                <span>🔗</span> Assignments
+            </button>
+
+            <button class="nav-item" data-page="generate">
+                <span>⚙</span> Generate Schedule
+            </button>
+
+            <button class="nav-item" data-page="schedule">
+                <span>📅</span> Master Schedule
+            </button>
+
+            <button class="nav-item" data-page="conflicts">
+                <span>⚠</span> Conflicts
+                <span class="nav-badge" id="sidebarConflict">0</span>
+            </button>
+
+            <div class="nav-label">ANALYSIS</div>
+
+            <button class="nav-item" data-page="health">
+                <span>📊</span> Schedule Health
+            </button>
+
+            <button class="nav-item" data-page="workload">
+                <span>👥</span> Teacher Workload
+            </button>
+
+            <button class="nav-item" data-page="utilization">
+                <span>🏢</span> Room Utilization
+            </button>
+
+            <button class="nav-item" data-page="simulator">
+                <span>🧪</span> What-If Simulator
+            </button>
+
+            <div class="nav-label">SYSTEM</div>
+
+            <button class="nav-item" data-page="reports">
+                <span>📄</span> Reports
+            </button>
+
+            <button class="nav-item" data-page="settings">
+                <span>⚙</span> Settings
+            </button>
+
+        </nav>
+
+        <div class="sidebar-bottom">
+            <div class="offline-status">
+                <span class="status-dot"></span>
+                Offline Mode
+            </div>
+        </div>
+
+    </aside>
+
+
+    <!-- MAIN AREA -->
+    <main class="main">
+
+        <!-- TOPBAR -->
+        <header class="topbar">
+
+            <button class="mobile-menu" id="mobileMenu">☰</button>
+
+            <div class="breadcrumb">
+                <span>School Administration</span>
+                <strong>/</strong>
+                <span id="pageTitle">Dashboard</span>
+            </div>
+
+            <div class="top-actions">
+
+                <button class="icon-btn" title="Notifications">
+                    🔔
+                    <span class="notification-dot"></span>
+                </button>
+
+                <div class="profile">
+                    <div class="avatar">AD</div>
+                    <div class="profile-info">
+                        <strong>Administrator</strong>
+                        <small>School Scheduler</small>
+                    </div>
+                </div>
+
+            </div>
+
+        </header>
+
+
+        <!-- CONTENT -->
+        <section class="content">
+
+            <!-- DASHBOARD -->
+            <div class="page active" id="dashboard">
+
+                <div class="page-heading">
+                    <div>
+                        <h1>Good morning, Administrator 👋</h1>
+                        <p>Manage your school's schedule intelligently.</p>
+                    </div>
+
+                    <button class="primary-btn" onclick="showPage('generate')">
+                        ⚡ Generate Schedule
+                    </button>
+                </div>
+
+
+                <div class="metric-grid">
+
+                    <div class="metric-card">
+                        <div class="metric-icon blue">👨‍🏫</div>
+                        <div>
+                            <span>Teachers</span>
+                            <strong id="teacherCount">0</strong>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon purple">🎓</div>
+                        <div>
+                            <span>Sections</span>
+                            <strong id="sectionCount">0</strong>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon green">📚</div>
+                        <div>
+                            <span>Subjects</span>
+                            <strong id="subjectCount">0</strong>
+                        </div>
+                    </div>
+
+                    <div class="metric-card">
+                        <div class="metric-icon orange">🏫</div>
+                        <div>
+                            <span>Classrooms</span>
+                            <strong id="roomCount">0</strong>
+                        </div>
+                    </div>
+
+                </div>
+
+
+                <div class="dashboard-grid">
+
+                    <div class="card health-card">
+
+                        <div class="card-header">
+                            <div>
+                                <h2>Schedule Health</h2>
+                                <p>Overall schedule quality</p>
+                            </div>
+
+                            <span class="status-pill success" id="healthStatus">
+                                Excellent
+                            </span>
+                        </div>
+
+                        <div class="health-body">
+
+                            <div class="score-circle" id="healthScore">
+                                0
+                            </div>
+
+                            <div class="health-details">
+
+                                <div class="health-row">
+                                    <span>Teacher Conflicts</span>
+                                    <strong id="teacherConflicts">0</strong>
+                                </div>
+
+                                <div class="health-row">
+                                    <span>Room Conflicts</span>
+                                    <strong id="roomConflicts">0</strong>
+                                </div>
+
+                                <div class="health-row">
+                                    <span>Section Conflicts</span>
+                                    <strong id="sectionConflicts">0</strong>
+                                </div>
+
+                                <div class="health-row">
+                                    <span>Scheduled Classes</span>
+                                    <strong id="scheduledCount">0</strong>
+                                </div>
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <div class="card quick-card">
+
+                        <div class="card-header">
+                            <div>
+                                <h2>Quick Actions</h2>
+                                <p>Common scheduling tasks</p>
+                            </div>
+                        </div>
+
+                        <div class="quick-actions">
+
+                            <button onclick="showPage('teachers')">
+                                <span>👨‍🏫</span>
+                                Add Teacher
+                            </button>
+
+                            <button onclick="showPage('subjects')">
+                                <span>📚</span>
+                                Add Subject
+                            </button>
+
+                            <button onclick="showPage('rooms')">
+                                <span>🏫</span>
+                                Add Room
+                            </button>
+
+                            <button onclick="showPage('assignments')">
+                                <span>🔗</span>
+                                Assign Class
+                            </button>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+
+                <div class="dashboard-grid lower">
+
+                    <div class="card">
+
+                        <div class="card-header">
+
+                            <div>
+                                <h2>Today's Schedule</h2>
+                                <p>Current school timetable</p>
+                            </div>
+
+                            <button class="text-btn" onclick="showPage('schedule')">
+                                View Full Schedule →
+                            </button>
+
+                        </div>
+
+                        <div id="todaySchedule" class="schedule-preview">
+                            <div class="empty-state">
+                                <div>📅</div>
+                                <h3>No schedule generated</h3>
+                                <p>Generate a schedule to see classes here.</p>
+                            </div>
+                        </div>
+
+                    </div>
+
+
+                    <div class="card">
+
+                        <div class="card-header">
+                            <div>
+                                <h2>System Status</h2>
+                                <p>SMARTSCHED health</p>
+                            </div>
+                        </div>
+
+                        <div class="system-status">
+
+                            <div>
+                                <span class="status-dot green-dot"></span>
+                                Database
+                                <strong>Ready</strong>
+                            </div>
+
+                            <div>
+                                <span class="status-dot green-dot"></span>
+                                Scheduling Engine
+                                <strong>Ready</strong>
+                            </div>
+
+                            <div>
+                                <span class="status-dot green-dot"></span>
+                                Offline Storage
+                                <strong>Active</strong>
+                            </div>
+
+                            <div>
+                                <span class="status-dot green-dot"></span>
+                                Conflict Monitor
+                                <strong>Active</strong>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- TEACHERS -->
+            <div class="page" id="teachers">
+
+                <div class="page-heading">
+                    <div>
+                        <h1>Teachers</h1>
+                        <p>Manage teacher information and workload.</p>
+                    </div>
+
+                    <button class="primary-btn" onclick="openTeacherModal()">
+                        + Add Teacher
+                    </button>
+                </div>
+
+                <div class="card">
+
+                    <div class="toolbar">
+
+                        <input
+                            type="text"
+                            id="teacherSearch"
+                            placeholder="Search teachers..."
+                            oninput="renderTeachers()">
+
+                        <button class="secondary-btn" onclick="loadDemoData()">
+                            Load Demo Data
+                        </button>
+
+                    </div>
+
+                    <div class="table-wrapper">
+
+                        <table>
+
+                            <thead>
+                                <tr>
+                                    <th>Teacher</th>
+                                    <th>Department</th>
+                                    <th>Max Hours</th>
+                                    <th>Assigned Hours</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="teacherTable"></tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- SUBJECTS -->
+            <div class="page" id="subjects">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Subjects</h1>
+                        <p>Manage subjects and weekly time allotments.</p>
+                    </div>
+
+                    <button class="primary-btn" onclick="openSubjectModal()">
+                        + Add Subject
+                    </button>
+
+                </div>
+
+                <div class="card">
+
+                    <div class="toolbar">
+
+                        <input
+                            type="text"
+                            id="subjectSearch"
+                            placeholder="Search subjects..."
+                            oninput="renderSubjects()">
+
+                    </div>
+
+                    <div class="table-wrapper">
+
+                        <table>
+
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Subject</th>
+                                    <th>Weekly Hours</th>
+                                    <th>Meeting Duration</th>
+                                    <th>Room Type</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="subjectTable"></tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- SECTIONS -->
+            <div class="page" id="sections">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Sections</h1>
+                        <p>Manage grade levels, sections, and student counts.</p>
+                    </div>
+
+                    <button class="primary-btn" onclick="openSectionModal()">
+                        + Add Section
+                    </button>
+
+                </div>
+
+                <div class="card">
+
+                    <div class="table-wrapper">
+
+                        <table>
+
+                            <thead>
+                                <tr>
+                                    <th>Grade</th>
+                                    <th>Section</th>
+                                    <th>Students</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="sectionTable"></tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- ROOMS -->
+            <div class="page" id="rooms">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Classrooms</h1>
+                        <p>Manage classrooms, capacities, and room types.</p>
+                    </div>
+
+                    <button class="primary-btn" onclick="openRoomModal()">
+                        + Add Classroom
+                    </button>
+
+                </div>
+
+                <div class="room-grid" id="roomGrid"></div>
+
+            </div>
+
+
+            <!-- TIME SLOTS -->
+            <div class="page" id="timeslots">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Time Slots</h1>
+                        <p>Configure the school's daily schedule.</p>
+                    </div>
+
+                    <button class="primary-btn" onclick="addTimeSlot()">
+                        + Add Time Slot
+                    </button>
+
+                </div>
+
+                <div class="card">
+
+                    <div class="time-grid" id="timeGrid"></div>
+
+                </div>
+
+            </div>
+
+
+            <!-- ASSIGNMENTS -->
+            <div class="page" id="assignments">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Teaching Assignments</h1>
+                        <p>Connect teachers, subjects, and sections.</p>
+                    </div>
+
+                    <button class="primary-btn" onclick="openAssignmentModal()">
+                        + Add Assignment
+                    </button>
+
+                </div>
+
+                <div class="card">
+
+                    <div class="table-wrapper">
+
+                        <table>
+
+                            <thead>
+                                <tr>
+                                    <th>Teacher</th>
+                                    <th>Subject</th>
+                                    <th>Section</th>
+                                    <th>Weekly Hours</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="assignmentTable"></tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- GENERATE -->
+            <div class="page" id="generate">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Generate Schedule</h1>
+                        <p>Configure the scheduling engine.</p>
+                    </div>
+
+                </div>
+
+                <div class="generator-layout">
+
+                    <div class="card">
+
+                        <div class="card-header">
+                            <div>
+                                <h2>Scheduling Objectives</h2>
+                                <p>Adjust optimization priorities.</p>
+                            </div>
+                        </div>
+
+                        <div class="objective">
+
+                            <div>
+                                <strong>Teacher Workload Balance</strong>
+                                <span>Distribute teaching hours fairly.</span>
+                            </div>
+
+                            <input type="range" value="85">
+
+                        </div>
+
+                        <div class="objective">
+
+                            <div>
+                                <strong>Room Efficiency</strong>
+                                <span>Improve classroom utilization.</span>
+                            </div>
+
+                            <input type="range" value="75">
+
+                        </div>
+
+                        <div class="objective">
+
+                            <div>
+                                <strong>Morning Subject Preference</strong>
+                                <span>Prefer important subjects earlier.</span>
+                            </div>
+
+                            <input type="range" value="60">
+
+                        </div>
+
+                        <div class="objective">
+
+                            <div>
+                                <strong>Teacher Free Periods</strong>
+                                <span>Provide reasonable breaks.</span>
+                            </div>
+
+                            <input type="range" value="80">
+
+                        </div>
+
+                        <button class="generate-btn" onclick="generateSchedule()">
+                            ⚡ GENERATE OPTIMIZED SCHEDULE
+                        </button>
+
+                    </div>
+
+
+                    <div class="card engine-card">
+
+                        <div class="engine-icon">⚙</div>
+
+                        <h2>Constraint Engine</h2>
+
+                        <p>
+                            SMARTSCHED will analyze teachers,
+                            sections, rooms, subjects, time slots,
+                            and scheduling constraints.
+                        </p>
+
+                        <div class="engine-list">
+
+                            <div>✓ Teacher conflicts</div>
+                            <div>✓ Room conflicts</div>
+                            <div>✓ Section conflicts</div>
+                            <div>✓ Room capacity</div>
+                            <div>✓ Teacher availability</div>
+                            <div>✓ Subject time allotment</div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- SCHEDULE -->
+            <div class="page" id="schedule">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Master Schedule</h1>
+                        <p>View and edit the complete school timetable.</p>
+                    </div>
+
+                    <div class="heading-actions">
+                        <button class="secondary-btn" onclick="printSchedule()">
+                            🖨 Print
+                        </button>
+
+                        <button class="primary-btn" onclick="generateSchedule()">
+                            Regenerate
+                        </button>
+                    </div>
+
+                </div>
+
+                <div class="card schedule-card">
+
+                    <div class="schedule-toolbar">
+
+                        <select id="sectionFilter" onchange="renderSchedule()">
+                            <option value="all">All Sections</option>
+                        </select>
+
+                        <select id="teacherFilter" onchange="renderSchedule()">
+                            <option value="all">All Teachers</option>
+                        </select>
+
+                    </div>
+
+                    <div class="schedule-table-wrapper">
+
+                        <table class="master-table">
+
+                            <thead>
+                                <tr>
+                                    <th>TIME</th>
+                                    <th>MONDAY</th>
+                                    <th>TUESDAY</th>
+                                    <th>WEDNESDAY</th>
+                                    <th>THURSDAY</th>
+                                    <th>FRIDAY</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="masterSchedule"></tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- CONFLICTS -->
+            <div class="page" id="conflicts">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Conflict Center</h1>
+                        <p>Identify and resolve scheduling problems.</p>
+                    </div>
+
+                </div>
+
+                <div id="conflictList" class="conflict-list"></div>
+
+            </div>
+
+
+            <!-- HEALTH -->
+            <div class="page" id="health">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Schedule Health</h1>
+                        <p>Analyze the quality of the generated timetable.</p>
+                    </div>
+
+                </div>
+
+                <div class="analytics-grid">
+
+                    <div class="card big-score">
+                        <span>Schedule Health</span>
+                        <strong id="healthBig">0</strong>
+                        <small>out of 100</small>
+                    </div>
+
+                    <div class="card">
+                        <h3>Teacher Conflicts</h3>
+                        <div class="big-number" id="healthTeacherConflict">0</div>
+                        <span class="muted">Target: 0</span>
+                    </div>
+
+                    <div class="card">
+                        <h3>Room Conflicts</h3>
+                        <div class="big-number" id="healthRoomConflict">0</div>
+                        <span class="muted">Target: 0</span>
+                    </div>
+
+                    <div class="card">
+                        <h3>Required Hours</h3>
+                        <div class="big-number">100%</div>
+                        <span class="muted">Subjects scheduled</span>
+                    </div>
+
+                </div>
+
+                <div class="dashboard-grid">
+
+                    <div class="card">
+
+                        <div class="card-header">
+                            <h2>Schedule Quality</h2>
+                        </div>
+
+                        <div class="progress-list">
+
+                            <div class="progress-item">
+                                <div>
+                                    <span>Teacher Balance</span>
+                                    <strong id="teacherBalance">0%</strong>
+                                </div>
+                                <div class="progress">
+                                    <span id="teacherBalanceBar"></span>
+                                </div>
+                            </div>
+
+                            <div class="progress-item">
+                                <div>
+                                    <span>Room Utilization</span>
+                                    <strong id="roomBalance">0%</strong>
+                                </div>
+                                <div class="progress">
+                                    <span id="roomBalanceBar"></span>
+                                </div>
+                            </div>
+
+                            <div class="progress-item">
+                                <div>
+                                    <span>Student Distribution</span>
+                                    <strong>95%</strong>
+                                </div>
+                                <div class="progress">
+                                    <span style="width:95%"></span>
+                                </div>
+                            </div>
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- WORKLOAD -->
+            <div class="page" id="workload">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Teacher Workload</h1>
+                        <p>Analyze teaching hours and free periods.</p>
+                    </div>
+
+                </div>
+
+                <div class="card">
+
+                    <div class="table-wrapper">
+
+                        <table>
+
+                            <thead>
+                                <tr>
+                                    <th>Teacher</th>
+                                    <th>Assigned Hours</th>
+                                    <th>Maximum Hours</th>
+                                    <th>Utilization</th>
+                                    <th>Free Periods</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="workloadTable"></tbody>
+
+                        </table>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- UTILIZATION -->
+            <div class="page" id="utilization">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Room Utilization</h1>
+                        <p>Analyze classroom usage.</p>
+                    </div>
+
+                </div>
+
+                <div class="room-grid" id="utilizationGrid"></div>
+
+            </div>
+
+
+            <!-- SIMULATOR -->
+            <div class="page" id="simulator">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>What-If Simulator</h1>
+                        <p>Test changes before modifying your actual schedule.</p>
+                    </div>
+
+                </div>
+
+                <div class="simulator-layout">
+
+                    <div class="card">
+
+                        <h2>Scenario</h2>
+
+                        <p class="muted">
+                            Select a change to simulate.
+                        </p>
+
+                        <label>Scenario Type</label>
+
+                        <select id="scenarioType">
+
+                            <option value="teacher">Remove a Teacher</option>
+                            <option value="room">Remove a Classroom</option>
+                            <option value="section">Add a Section</option>
+                            <option value="hours">Increase Subject Hours</option>
+
+                        </select>
+
+                        <button class="primary-btn full-btn" onclick="runSimulation()">
+                            🧪 Run Simulation
+                        </button>
+
+                    </div>
+
+
+                    <div class="card simulation-result" id="simulationResult">
+
+                        <div class="simulation-icon">🧪</div>
+
+                        <h2>Simulation Results</h2>
+
+                        <p>
+                            Choose a scenario and run the simulator.
+                        </p>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- REPORTS -->
+            <div class="page" id="reports">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Reports</h1>
+                        <p>Generate printable school scheduling reports.</p>
+                    </div>
+
+                </div>
+
+                <div class="report-grid">
+
+                    <div class="report-card">
+                        <span>📅</span>
+                        <h3>Master Schedule</h3>
+                        <p>Complete school timetable.</p>
+                        <button onclick="printSchedule()">Print</button>
+                    </div>
+
+                    <div class="report-card">
+                        <span>👨‍🏫</span>
+                        <h3>Teacher Schedules</h3>
+                        <p>Individual teacher schedules.</p>
+                        <button onclick="showPage('workload')">View</button>
+                    </div>
+
+                    <div class="report-card">
+                        <span>🏫</span>
+                        <h3>Room Schedules</h3>
+                        <p>Classroom utilization report.</p>
+                        <button onclick="showPage('utilization')">View</button>
+                    </div>
+
+                    <div class="report-card">
+                        <span>⚠</span>
+                        <h3>Conflict Report</h3>
+                        <p>Scheduling problems.</p>
+                        <button onclick="showPage('conflicts')">View</button>
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <!-- SETTINGS -->
+            <div class="page" id="settings">
+
+                <div class="page-heading">
+
+                    <div>
+                        <h1>Settings</h1>
+                        <p>Configure SMARTSCHED.</p>
+                    </div>
+
+                </div>
+
+                <div class="card settings-card">
+
+                    <h2>School Information</h2>
+
+                    <label>School Name</label>
+                    <input id="schoolName" value="Sample Senior High School">
+
+                    <label>Academic Year</label>
+                    <input value="2026–2027">
+
+                    <button class="primary-btn" onclick="saveSettings()">
+                        Save Settings
+                    </button>
+
+                    <hr>
+
+                    <h2>Data Management</h2>
+
+                    <div class="settings-actions">
+
+                        <button class="secondary-btn" onclick="exportData()">
+                            Export Data
+                        </button>
+
+                        <button class="secondary-btn" onclick="loadDemoData()">
+                            Restore Demo Data
+                        </button>
+
+                        <button class="danger-btn" onclick="clearData()">
+                            Clear All Data
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+</div>
+
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modalOverlay">
+
+    <div class="modal">
+
+        <div class="modal-header">
+            <h2 id="modalTitle">Add Item</h2>
+            <button onclick="closeModal()">×</button>
+        </div>
+
+        <div id="modalBody"></div>
+
+    </div>
+
+</div>
+
+
+<div class="toast" id="toast"></div>
+
+
+<script src="script.js"></script>
+
+</body>
+</html>
