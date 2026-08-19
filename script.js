@@ -616,6 +616,10 @@ function renderSections() {
                 ${adviser
                     ? `<span class="table-status">${adviser.name}</span>`
                     : `<span class="table-status muted">Unassigned</span>`}
+                <button class="action-btn" style="margin-left:6px;"
+                    onclick="openAdviserModal(${s.id})">
+                    ${adviser ? "Change" : "Assign"}
+                </button>
             </td>
 
             <td>
@@ -644,6 +648,18 @@ function renderSections() {
 
 function openSectionModal() {
 
+    const teacherOptions =
+        db.teachers.map(t => {
+
+            const busy =
+                t.isAdviser && t.advisorySectionId;
+
+            return `<option value="${t.id}">
+                ${t.name}${busy ? " (already advising another section)" : ""}
+            </option>`;
+
+        }).join("");
+
     openModal(
         "Add Section",
         `
@@ -668,6 +684,17 @@ function openSectionModal() {
                 value="40"
                 min="1">
 
+            <label>Class Adviser</label>
+
+            <select id="sectionAdviser">
+                <option value="">— No Adviser Assigned —</option>
+                ${teacherOptions}
+            </select>
+            <small class="form-hint">
+                Picking a teacher who already advises another section
+                will move them to this one.
+            </small>
+
             <button class="primary-btn modal-submit">
                 Add Section
             </button>
@@ -683,7 +710,10 @@ function addSection(event) {
 
     event.preventDefault();
 
-    db.sections.push({
+    const adviserValue =
+        document.getElementById("sectionAdviser").value;
+
+    const newSection = {
 
         id: Date.now(),
 
@@ -698,7 +728,13 @@ function addSection(event) {
                 document.getElementById("sectionStudents").value
             )
 
-    });
+    };
+
+    db.sections.push(newSection);
+
+    if (adviserValue) {
+        assignAdviser(newSection.id, Number(adviserValue), false);
+    }
 
     saveDB();
 
@@ -707,6 +743,112 @@ function addSection(event) {
     renderAll();
 
     toast("Section added successfully.");
+
+}
+
+
+function openAdviserModal(sectionId) {
+
+    const section =
+        db.sections.find(s => s.id === sectionId);
+
+    if (!section) return;
+
+    const currentAdviser =
+        db.teachers.find(
+            t => t.isAdviser && t.advisorySectionId === sectionId
+        );
+
+    const teacherOptions =
+        db.teachers.map(t => {
+
+            const busy =
+                t.isAdviser &&
+                t.advisorySectionId &&
+                t.advisorySectionId !== sectionId;
+
+            return `<option value="${t.id}"
+                ${currentAdviser && currentAdviser.id === t.id ? "selected" : ""}>
+                ${t.name}${busy ? " (already advising another section)" : ""}
+            </option>`;
+
+        }).join("");
+
+    openModal(
+        `Class Adviser — ${section.grade} ${section.name}`,
+        `
+        <form onsubmit="saveAdviser(event, ${sectionId})">
+
+            <label>Class Adviser</label>
+
+            <select id="adviserSelect">
+                <option value="">— No Adviser Assigned —</option>
+                ${teacherOptions}
+            </select>
+
+            <button class="primary-btn modal-submit">
+                Save
+            </button>
+
+        </form>
+        `
+    );
+
+}
+
+
+function saveAdviser(event, sectionId) {
+
+    event.preventDefault();
+
+    const value =
+        document.getElementById("adviserSelect").value;
+
+    assignAdviser(sectionId, value ? Number(value) : null, true);
+
+    saveDB();
+
+    closeModal();
+
+    renderAll();
+
+    toast("Class adviser updated.");
+
+}
+
+
+function assignAdviser(sectionId, teacherId, showConflictToast) {
+
+    /*
+     Clear anyone currently advising this section.
+    */
+
+    db.teachers.forEach(t => {
+
+        if (t.advisorySectionId === sectionId) {
+            t.isAdviser = false;
+            t.advisorySectionId = null;
+        }
+
+    });
+
+    if (!teacherId) return;
+
+    const teacher =
+        db.teachers.find(t => t.id === teacherId);
+
+    if (!teacher) return;
+
+    if (teacher.isAdviser && teacher.advisorySectionId && showConflictToast) {
+
+        toast(
+            `${teacher.name} was moved from their previous advisory section.`
+        );
+
+    }
+
+    teacher.isAdviser = true;
+    teacher.advisorySectionId = sectionId;
 
 }
 
