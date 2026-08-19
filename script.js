@@ -459,6 +459,10 @@ function renderSubjects() {
 
                 <td>
                     <button class="action-btn"
+                        onclick="openEditSubjectModal(${s.id})">
+                        Edit
+                    </button>
+                    <button class="action-btn"
                         onclick="deleteSubject(${s.id})">
                         Delete
                     </button>
@@ -564,6 +568,113 @@ function addSubject(event) {
     renderAll();
 
     toast("Subject added successfully.");
+
+}
+
+
+function openEditSubjectModal(id) {
+
+    const s =
+        db.subjects.find(sub => sub.id === id);
+
+    if (!s) return;
+
+    const roomTypes =
+        ["Regular Classroom", "Laboratory", "Computer Laboratory", "Gym", "Library"];
+
+    const roomOptions =
+        roomTypes.map(r =>
+            `<option ${r === s.roomType ? "selected" : ""}>${r}</option>`
+        ).join("");
+
+    openModal(
+        "Edit Subject",
+        `
+        <form onsubmit="saveSubjectEdit(event, ${s.id})">
+
+            <label>Subject Code</label>
+
+            <input id="editSubjectCode"
+                required
+                value="${s.code}">
+
+            <label>Subject Name</label>
+
+            <input id="editSubjectName"
+                required
+                value="${s.name}">
+
+            <label>Weekly Hours</label>
+
+            <input id="editSubjectHours"
+                type="number"
+                min="1"
+                value="${s.hours}">
+
+            <label>Minutes per Meeting</label>
+
+            <input id="editSubjectMinutes"
+                type="number"
+                min="1"
+                value="${s.minutes}">
+            <small class="form-hint">
+                Use this for subjects that meet in one straight block —
+                e.g. 120 for a 2-hour block, 240 for a 4-hour block —
+                instead of separate 60-minute periods.
+            </small>
+
+            <label>Room Type</label>
+
+            <select id="editSubjectRoom">
+                ${roomOptions}
+            </select>
+
+            <button class="primary-btn modal-submit">
+                Save Changes
+            </button>
+
+        </form>
+        `
+    );
+
+}
+
+
+function saveSubjectEdit(event, id) {
+
+    event.preventDefault();
+
+    const s =
+        db.subjects.find(sub => sub.id === id);
+
+    if (!s) return;
+
+    s.code =
+        document.getElementById("editSubjectCode").value;
+
+    s.name =
+        document.getElementById("editSubjectName").value;
+
+    s.hours =
+        Number(
+            document.getElementById("editSubjectHours").value
+        );
+
+    s.minutes =
+        Number(
+            document.getElementById("editSubjectMinutes").value
+        );
+
+    s.roomType =
+        document.getElementById("editSubjectRoom").value;
+
+    saveDB();
+
+    closeModal();
+
+    renderAll();
+
+    toast("Subject updated successfully.");
 
 }
 
@@ -1430,10 +1541,10 @@ function generateSchedule() {
                 return;
             }
 
-            const requiredMeetings =
+            const totalPeriods =
                 Number(assignment.hours);
 
-            if (requiredMeetings <= 0 || classSlots.length === 0) {
+            if (totalPeriods <= 0 || classSlots.length === 0) {
                 return;
             }
 
@@ -1462,88 +1573,180 @@ function generateSchedule() {
 
             }
 
-            let placed = false;
-
             /*
-             PARALLEL SCHEDULING:
-             try to find ONE period that is free across enough
-             days of the week, so the subject always meets at
-             the same period (e.g. Monday–Friday, Period 1).
+             MEETING LENGTH — a subject's "Minutes per Meeting"
+             controls how many consecutive periods make up one
+             sitting (e.g. 120 minutes = a straight double period).
+             Periods are assumed to be ~60 minutes each, matching
+             how Weekly Hours already maps 1:1 to period count.
             */
 
-            for (
-                let attempt = 0;
-                attempt < classSlots.length && !placed;
-                attempt++
-            ) {
+            const periodsPerMeeting =
+                Math.max(
+                    1,
+                    Math.round((Number(subject.minutes) || 60) / 60)
+                );
 
-                const slot =
-                    classSlots[
-                        (assignmentIndex + attempt) %
-                        classSlots.length
-                    ];
+            /*
+             Break the week's total periods into meeting blocks of
+             that length (the last one may be shorter if it doesn't
+             divide evenly).
+            */
 
-                const availableDays = [];
+            const meetingLengths = [];
 
-                for (const day of days) {
+            let remainingPeriods = totalPeriods;
 
-                    const teacherBusy =
-                        db.schedule.some(
-                            x =>
-                                x.teacherId === teacher.id &&
-                                x.day === day &&
-                                x.slotId === slot.id
-                        );
+            while (remainingPeriods > 0) {
 
-                    if (teacherBusy) continue;
+                const len =
+                    Math.min(periodsPerMeeting, remainingPeriods);
 
-                    const sectionBusy =
-                        db.schedule.some(
-                            x =>
-                                x.sectionId === section.id &&
-                                x.day === day &&
-                                x.slotId === slot.id
-                        );
+                meetingLengths.push(len);
 
-                    if (sectionBusy) continue;
+                remainingPeriods -= len;
 
-                    let dayRoom = fixedRoom;
+            }
 
-                    if (isPE) {
+            /*
+             Group meetings by length so equal-length meetings can
+             still share the clean "same period every day" pattern.
+             Longer blocks are placed first since they're the most
+             constrained (fewer free consecutive-period windows).
+            */
 
-                        dayRoom =
-                            findAvailableRoomOfType(
-                                section,
-                                "Gym",
-                                day,
-                                slot.id
-                            );
+            const lengthGroups = {};
 
-                    } else {
+            meetingLengths.forEach(len => {
+                lengthGroups[len] = (lengthGroups[len] || 0) + 1;
+            });
 
-                        const roomBusy =
-                            db.schedule.some(
-                                x =>
-                                    x.roomId === fixedRoom.id &&
-                                    x.day === day &&
-                                    x.slotId === slot.id
-                            );
+            const sortedLengths =
+                Object.keys(lengthGroups)
+                    .map(Number)
+                    .sort((a, b) => b - a);
 
-                        if (roomBusy) dayRoom = null;
+            sortedLengths.forEach(length => {
 
-                    }
+                const count = lengthGroups[length];
 
-                    if (!dayRoom) continue;
+                const windows =
+                    getConsecutivePeriodWindows(length);
 
-                    availableDays.push({ day, room: dayRoom });
+                if (windows.length === 0) {
+
+                    unplaced.push(
+                        `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): no run of ${length} consecutive period(s) available for this meeting length`
+                    );
+
+                    return;
 
                 }
 
-                if (availableDays.length >= requiredMeetings) {
+                let placedCount = 0;
 
-                    availableDays
-                        .slice(0, requiredMeetings)
-                        .forEach(({ day, room }) => {
+                /*
+                 PARALLEL SCHEDULING:
+                 try to find ONE window of consecutive periods that
+                 is free across enough days of the week, so the
+                 subject always meets at the same block (e.g.
+                 Monday & Wednesday, Periods 1–2).
+                */
+
+                for (
+                    let attempt = 0;
+                    attempt < windows.length && placedCount < count;
+                    attempt++
+                ) {
+
+                    const window =
+                        windows[
+                            (assignmentIndex + attempt) %
+                            windows.length
+                        ];
+
+                    const availableDays = [];
+
+                    for (const day of days) {
+
+                        const dayRoom =
+                            resolveWindowRoom(
+                                teacher, subject, section,
+                                isPE, fixedRoom, day, window
+                            );
+
+                        if (!dayRoom) continue;
+
+                        availableDays.push({ day, room: dayRoom });
+
+                    }
+
+                    const stillNeeded = count - placedCount;
+
+                    if (availableDays.length >= stillNeeded) {
+
+                        availableDays
+                            .slice(0, stillNeeded)
+                            .forEach(({ day, room }) => {
+
+                                window.forEach(slot => {
+
+                                    db.schedule.push({
+
+                                        id: Date.now() + Math.random(),
+                                        day: day,
+                                        slotId: slot.id,
+                                        teacherId: teacher.id,
+                                        subjectId: subject.id,
+                                        sectionId: section.id,
+                                        roomId: room.id
+
+                                    });
+
+                                });
+
+                            });
+
+                        placedCount = count;
+
+                    }
+
+                }
+
+                /*
+                 FALLBACK — some circumstances just can't follow the
+                 clean parallel pattern. Place meeting blocks one at
+                 a time on a best-effort basis instead of dropping
+                 them.
+                */
+
+                if (placedCount < count) {
+
+                    let remaining = count - placedCount;
+                    let guard = 0;
+
+                    while (remaining > 0 && guard < 300) {
+
+                        guard++;
+
+                        const window =
+                            windows[
+                                (assignmentIndex + guard) %
+                                windows.length
+                            ];
+
+                        const day =
+                            days[guard % days.length];
+
+                        const room =
+                            resolveWindowRoom(
+                                teacher, subject, section,
+                                isPE, fixedRoom, day, window
+                            );
+
+                        if (!room) continue;
+
+                        window.forEach(slot => {
 
                             db.schedule.push({
 
@@ -1559,121 +1762,26 @@ function generateSchedule() {
 
                         });
 
-                    placed = true;
-
-                }
-
-            }
-
-            /*
-             FALLBACK — some circumstances just can't follow the
-             clean parallel pattern (e.g. not enough free days at
-             any single period). Place meetings one at a time on
-             a best-effort basis instead of dropping them.
-            */
-
-            if (!placed) {
-
-                let remaining = requiredMeetings;
-                let guard = 0;
-
-                while (remaining > 0 && guard < 300) {
-
-                    guard++;
-
-                    const slot =
-                        classSlots[
-                            (assignmentIndex + guard) %
-                            classSlots.length
-                        ];
-
-                    const day =
-                        days[guard % days.length];
-
-                    const teacherBusy =
-                        db.schedule.some(
-                            x =>
-                                x.teacherId === teacher.id &&
-                                x.day === day &&
-                                x.slotId === slot.id
-                        );
-
-                    const sectionBusy =
-                        db.schedule.some(
-                            x =>
-                                x.sectionId === section.id &&
-                                x.day === day &&
-                                x.slotId === slot.id
-                        );
-
-                    if (teacherBusy || sectionBusy) continue;
-
-                    let room = null;
-
-                    if (isPE) {
-
-                        room =
-                            findAvailableRoomOfType(
-                                section,
-                                "Gym",
-                                day,
-                                slot.id
-                            );
-
-                    } else {
-
-                        const roomBusy =
-                            db.schedule.some(
-                                x =>
-                                    x.roomId === fixedRoom.id &&
-                                    x.day === day &&
-                                    x.slotId === slot.id
-                            );
-
-                        room =
-                            !roomBusy
-                                ? fixedRoom
-                                : findAvailableRoom(
-                                    subject,
-                                    section,
-                                    day,
-                                    slot.id
-                                );
+                        remaining--;
 
                     }
 
-                    if (!room) continue;
+                    if (remaining > 0) {
 
-                    db.schedule.push({
+                        unplaced.push(
+                            `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): ${remaining} of ${count} meeting(s) (${length}-period block) could not be placed`
+                        );
 
-                        id: Date.now() + Math.random(),
-                        day: day,
-                        slotId: slot.id,
-                        teacherId: teacher.id,
-                        subjectId: subject.id,
-                        sectionId: section.id,
-                        roomId: room.id
+                        console.warn(
+                            "Could not fully place assignment:",
+                            assignment
+                        );
 
-                    });
-
-                    remaining--;
+                    }
 
                 }
 
-                if (remaining > 0) {
-
-                    unplaced.push(
-                        `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): ${remaining} of ${requiredMeetings} periods could not be placed`
-                    );
-
-                    console.warn(
-                        "Could not fully place assignment:",
-                        assignment
-                    );
-
-                }
-
-            }
+            });
 
         });
 
@@ -1709,6 +1817,169 @@ function generateSchedule() {
 function isPESubject(subject) {
 
     return !!subject && subject.roomType === "Gym";
+
+}
+
+
+/* =========================================================
+   CONSECUTIVE-PERIOD WINDOWS
+   Groups class slots into "runs" of back-to-back periods
+   (a break in db.timeslots splits a run), then returns every
+   possible sliding window of `length` consecutive periods.
+   The same time-slot list applies to every day, so a window
+   found here is valid on any day of the week.
+   ========================================================= */
+
+function getConsecutivePeriodWindows(length) {
+
+    const runs = [];
+    let current = [];
+
+    db.timeslots.forEach(slot => {
+
+        if (slot.type === "class") {
+
+            current.push(slot);
+
+        } else if (current.length) {
+
+            runs.push(current);
+            current = [];
+
+        }
+
+    });
+
+    if (current.length) runs.push(current);
+
+    const windows = [];
+
+    runs.forEach(run => {
+
+        for (
+            let i = 0;
+            i + length <= run.length;
+            i++
+        ) {
+
+            windows.push(run.slice(i, i + length));
+
+        }
+
+    });
+
+    return windows;
+
+}
+
+
+/* =========================================================
+   RESOLVE THE ROOM FOR A WHOLE MEETING WINDOW ON ONE DAY
+   Checks teacher, section, and room availability across
+   EVERY period in the window (not just one), since a
+   multi-period meeting only works if the block is free
+   start to finish. Returns the room to use, or null if the
+   window doesn't work on this day.
+   ========================================================= */
+
+function resolveWindowRoom(
+    teacher, subject, section,
+    isPE, fixedRoom, day, window
+) {
+
+    const teacherBusy =
+        window.some(slot =>
+            db.schedule.some(
+                x =>
+                    x.teacherId === teacher.id &&
+                    x.day === day &&
+                    x.slotId === slot.id
+            )
+        );
+
+    if (teacherBusy) return null;
+
+    const sectionBusy =
+        window.some(slot =>
+            db.schedule.some(
+                x =>
+                    x.sectionId === section.id &&
+                    x.day === day &&
+                    x.slotId === slot.id
+            )
+        );
+
+    if (sectionBusy) return null;
+
+    if (isPE) {
+
+        const room =
+            findAvailableRoomOfType(
+                section, "Gym", day, window[0].id
+            );
+
+        if (!room) return null;
+
+        const roomFreeAllPeriods =
+            window.every(slot =>
+                !db.schedule.some(
+                    x =>
+                        x.roomId === room.id &&
+                        x.day === day &&
+                        x.slotId === slot.id
+                )
+            );
+
+        return roomFreeAllPeriods ? room : null;
+
+    }
+
+    const fixedRoomBusy =
+        window.some(slot =>
+            db.schedule.some(
+                x =>
+                    x.roomId === fixedRoom.id &&
+                    x.day === day &&
+                    x.slotId === slot.id
+            )
+        );
+
+    if (!fixedRoomBusy) return fixedRoom;
+
+    /*
+     Fixed room isn't free for the whole block — look for any
+     other suitable room that's free across every period.
+    */
+
+    const alternative =
+        db.rooms.find(room => {
+
+            if (room.id === fixedRoom.id) return false;
+
+            if (room.capacity < Number(section.students)) {
+                return false;
+            }
+
+            if (
+                subject.roomType &&
+                subject.roomType !== "Regular Classroom" &&
+                room.type !== subject.roomType
+            ) {
+                return false;
+            }
+
+            return window.every(slot =>
+                !db.schedule.some(
+                    x =>
+                        x.roomId === room.id &&
+                        x.day === day &&
+                        x.slotId === slot.id
+                )
+            );
+
+        });
+
+    return alternative || null;
 
 }
 
