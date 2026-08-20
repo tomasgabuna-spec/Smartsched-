@@ -410,6 +410,9 @@ function deleteTeacher(id) {
     db.teachers =
         db.teachers.filter(t => t.id !== id);
 
+    db.assignments =
+        db.assignments.filter(a => a.teacherId !== id);
+
     saveDB();
 
     renderAll();
@@ -689,6 +692,9 @@ function deleteSubject(id) {
 
     db.subjects =
         db.subjects.filter(s => s.id !== id);
+
+    db.assignments =
+        db.assignments.filter(a => a.subjectId !== id);
 
     saveDB();
 
@@ -988,6 +994,9 @@ function deleteSection(id) {
         }
 
     });
+
+    db.assignments =
+        db.assignments.filter(a => a.sectionId !== id);
 
     saveDB();
 
@@ -1325,6 +1334,25 @@ function renderAssignments() {
 
     if (!table) return;
 
+    /*
+     Drop any assignment left pointing at a teacher, subject,
+     or section that no longer exists (e.g. deleted before this
+     cleanup was added), instead of showing it as "Unknown".
+    */
+
+    const validCount = db.assignments.length;
+
+    db.assignments =
+        db.assignments.filter(a =>
+            db.teachers.some(t => t.id === a.teacherId) &&
+            db.subjects.some(s => s.id === a.subjectId) &&
+            db.sections.some(s => s.id === a.sectionId)
+        );
+
+    if (db.assignments.length !== validCount) {
+        saveDB();
+    }
+
     table.innerHTML = "";
 
     db.assignments.forEach(a => {
@@ -1388,19 +1416,37 @@ function openAssignmentModal() {
             </option>`
         ).join("");
 
-    const subjectOptions =
-        db.subjects.map(s =>
-            `<option value="${s.id}">
-                ${s.name}
-            </option>`
-        ).join("");
-
-    const sectionOptions =
+    const sectionOptionsHtml =
         db.sections.map(s =>
             `<option value="${s.id}">
                 ${s.grade} - ${s.name}
             </option>`
-        ).join("");
+        ).join("") ||
+        `<option value="">No sections yet</option>`;
+
+    const subjectRows =
+        db.subjects.map(s => `
+            <div class="subject-row">
+
+                <label class="subject-row-check">
+                    <input type="checkbox"
+                        id="assignSubjCheck_${s.id}"
+                        onchange="updateSubjectDropdownLabel()">
+                    <span>${s.name}</span>
+                </label>
+
+                <select id="assignSubjSection_${s.id}">
+                    ${sectionOptionsHtml}
+                </select>
+
+                <input id="assignSubjHours_${s.id}"
+                    type="number"
+                    min="1"
+                    value="${s.hours || 4}">
+
+            </div>
+        `).join("") ||
+        `<div class="subject-row-empty">No subjects yet.</div>`;
 
     openModal(
         "Add Teaching Assignment",
@@ -1413,23 +1459,38 @@ function openAssignmentModal() {
                 ${teacherOptions}
             </select>
 
-            <label>Subject</label>
+            <label>Subject, Section &amp; Weekly Hours</label>
 
-            <select id="assignmentSubject">
-                ${subjectOptions}
-            </select>
+            <div class="subject-multiselect">
 
-            <label>Section</label>
+                <button type="button"
+                    class="subject-dropdown-toggle"
+                    id="subjectDropdownLabel"
+                    onclick="toggleSubjectDropdown()">
 
-            <select id="assignmentSection">
-                ${sectionOptions}
-            </select>
+                    <span>Select subjects</span>
+                    <span class="subject-dropdown-arrow">&#9662;</span>
 
-            <label>Weekly Hours</label>
+                </button>
 
-            <input id="assignmentHours"
-                type="number"
-                value="4">
+                <div class="subject-dropdown-panel" id="subjectDropdownPanel">
+
+                    <div class="subject-row subject-row-head">
+                        <span>Subject</span>
+                        <span>Section</span>
+                        <span>Weekly Hours</span>
+                    </div>
+
+                    ${subjectRows}
+
+                </div>
+
+            </div>
+
+            <p class="form-hint">
+                Check every subject this teacher will handle, then pick the
+                matching section and weekly hours for each one.
+            </p>
 
             <button class="primary-btn modal-submit">
                 Add Assignment
@@ -1442,33 +1503,78 @@ function openAssignmentModal() {
 }
 
 
+function toggleSubjectDropdown() {
+
+    document.getElementById("subjectDropdownPanel")
+        .classList.toggle("show");
+
+    document.getElementById("subjectDropdownLabel")
+        .classList.toggle("open");
+
+}
+
+
+function updateSubjectDropdownLabel() {
+
+    const count =
+        db.subjects.filter(s =>
+            document.getElementById(`assignSubjCheck_${s.id}`)?.checked
+        ).length;
+
+    const label =
+        document.querySelector("#subjectDropdownLabel span");
+
+    label.textContent =
+        count === 0
+            ? "Select subjects"
+            : `${count} subject${count > 1 ? "s" : ""} selected`;
+
+}
+
+
 function addAssignment(event) {
 
     event.preventDefault();
 
-    db.assignments.push({
+    const teacherId =
+        Number(
+            document.getElementById("assignmentTeacher").value
+        );
 
-        id: Date.now(),
+    const selectedSubjects =
+        db.subjects.filter(s =>
+            document.getElementById(`assignSubjCheck_${s.id}`)?.checked
+        );
 
-        teacherId:
-            Number(
-                document.getElementById("assignmentTeacher").value
-            ),
+    if (selectedSubjects.length === 0) {
 
-        subjectId:
-            Number(
-                document.getElementById("assignmentSubject").value
-            ),
+        toast("Select at least one subject.");
 
-        sectionId:
-            Number(
-                document.getElementById("assignmentSection").value
-            ),
+        return;
 
-        hours:
-            Number(
-                document.getElementById("assignmentHours").value
-            )
+    }
+
+    selectedSubjects.forEach(s => {
+
+        db.assignments.push({
+
+            id: Date.now() + s.id,
+
+            teacherId,
+
+            subjectId: s.id,
+
+            sectionId:
+                Number(
+                    document.getElementById(`assignSubjSection_${s.id}`).value
+                ),
+
+            hours:
+                Number(
+                    document.getElementById(`assignSubjHours_${s.id}`).value
+                )
+
+        });
 
     });
 
@@ -1478,7 +1584,11 @@ function addAssignment(event) {
 
     renderAll();
 
-    toast("Teaching assignment added.");
+    toast(
+        selectedSubjects.length === 1
+            ? "Teaching assignment added."
+            : `${selectedSubjects.length} teaching assignments added.`
+    );
 
 }
 

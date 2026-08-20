@@ -1163,6 +1163,105 @@ tbody tr:hover {
 }
 
 
+/* SUBJECT / SECTION / WEEKLY HOURS MULTISELECT */
+
+.subject-multiselect {
+    position: relative;
+}
+
+.subject-dropdown-toggle {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 7px;
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--text);
+}
+
+.subject-dropdown-toggle:hover {
+    border-color: var(--primary);
+}
+
+.subject-dropdown-arrow {
+    color: var(--muted);
+    transition: transform .15s;
+}
+
+.subject-dropdown-toggle.open .subject-dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+.subject-dropdown-panel {
+    display: none;
+    margin-top: 6px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: white;
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 6px 10px;
+}
+
+.subject-dropdown-panel.show {
+    display: block;
+}
+
+.subject-row {
+    display: grid;
+    grid-template-columns: 1.3fr 1fr 90px;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.subject-row:last-child {
+    border-bottom: 0;
+}
+
+.subject-row-head {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--muted);
+    letter-spacing: .03em;
+}
+
+.subject-row-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 400;
+    cursor: pointer;
+}
+
+.subject-row-check input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--primary);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.subject-row select,
+.subject-row input {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 11px;
+}
+
+.subject-row-empty {
+    color: var(--muted);
+    font-size: 12px;
+    padding: 10px 0;
+}
+
+
 /* TOAST */
 
 .toast {
