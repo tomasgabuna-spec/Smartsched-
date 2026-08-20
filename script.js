@@ -518,6 +518,10 @@ function openSubjectModal() {
                 <option>Computer Laboratory</option>
                 <option>Gym</option>
                 <option>Library</option>
+                <option>Carpentry Laboratory</option>
+                <option>EIM Laboratory</option>
+                <option>Tailoring Laboratory (101)</option>
+                <option>Events and Management Laboratory (105)</option>
 
             </select>
 
@@ -580,7 +584,9 @@ function openEditSubjectModal(id) {
     if (!s) return;
 
     const roomTypes =
-        ["Regular Classroom", "Laboratory", "Computer Laboratory", "Gym", "Library"];
+        ["Regular Classroom", "Laboratory", "Computer Laboratory", "Gym", "Library",
+         "Carpentry Laboratory", "EIM Laboratory", "Tailoring Laboratory (101)",
+         "Events and Management Laboratory (105)"];
 
     const roomOptions =
         roomTypes.map(r =>
@@ -1091,6 +1097,10 @@ function openRoomModal() {
                 <option>Computer Laboratory</option>
                 <option>Gym</option>
                 <option>Library</option>
+                <option>Carpentry Laboratory</option>
+                <option>EIM Laboratory</option>
+                <option>Tailoring Laboratory (101)</option>
+                <option>Events and Management Laboratory (105)</option>
 
             </select>
 
