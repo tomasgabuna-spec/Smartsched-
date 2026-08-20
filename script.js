@@ -1416,36 +1416,59 @@ function openAssignmentModal() {
             </option>`
         ).join("");
 
-    const sectionOptionsHtml =
-        db.sections.map(s =>
-            `<option value="${s.id}">
-                ${s.grade} - ${s.name}
-            </option>`
-        ).join("") ||
-        `<option value="">No sections yet</option>`;
+    const sectionCheckOptions =
+        db.sections.map(sec => sec) || [];
 
     const subjectRows =
-        db.subjects.map(s => `
-            <div class="subject-row">
+        db.subjects.map(s => {
 
-                <label class="subject-row-check">
-                    <input type="checkbox"
-                        id="assignSubjCheck_${s.id}"
-                        onchange="updateSubjectDropdownLabel()">
-                    <span>${s.name}</span>
-                </label>
+            const sectionChecks =
+                sectionCheckOptions.map(sec => `
+                    <label class="section-check-pill">
+                        <input type="checkbox"
+                            id="assignSubjSectionCheck_${s.id}_${sec.id}"
+                            onchange="updateSectionDropdownLabel(${s.id})">
+                        <span>${sec.grade} - ${sec.name}</span>
+                    </label>
+                `).join("") ||
+                `<div class="subject-row-empty">No sections yet.</div>`;
 
-                <select id="assignSubjSection_${s.id}">
-                    ${sectionOptionsHtml}
-                </select>
+            return `
+            <div class="subject-item">
 
-                <input id="assignSubjHours_${s.id}"
-                    type="number"
-                    min="1"
-                    value="${s.hours || 4}">
+                <div class="subject-row">
+
+                    <label class="subject-row-check">
+                        <input type="checkbox"
+                            id="assignSubjCheck_${s.id}"
+                            onchange="updateSubjectDropdownLabel()">
+                        <span>${s.name}</span>
+                    </label>
+
+                    <button type="button"
+                        class="section-dropdown-toggle"
+                        id="sectionDropdownLabel_${s.id}"
+                        onclick="toggleSectionDropdown(${s.id})">
+
+                        <span>Select sections</span>
+                        <span class="subject-dropdown-arrow">&#9662;</span>
+
+                    </button>
+
+                    <input id="assignSubjHours_${s.id}"
+                        type="number"
+                        min="1"
+                        value="${s.hours || 4}">
+
+                </div>
+
+                <div class="section-dropdown-panel" id="sectionDropdownPanel_${s.id}">
+                    ${sectionChecks}
+                </div>
 
             </div>
-        `).join("") ||
+        `;
+        }).join("") ||
         `<div class="subject-row-empty">No subjects yet.</div>`;
 
     openModal(
@@ -1488,8 +1511,8 @@ function openAssignmentModal() {
             </div>
 
             <p class="form-hint">
-                Check every subject this teacher will handle, then pick the
-                matching section and weekly hours for each one.
+                Check every subject this teacher will handle, then pick one
+                or more matching sections and the weekly hours for each.
             </p>
 
             <button class="primary-btn modal-submit">
@@ -1532,6 +1555,39 @@ function updateSubjectDropdownLabel() {
 }
 
 
+function toggleSectionDropdown(subjectId) {
+
+    document.getElementById(`sectionDropdownPanel_${subjectId}`)
+        .classList.toggle("show");
+
+    document.getElementById(`sectionDropdownLabel_${subjectId}`)
+        .classList.toggle("open");
+
+}
+
+
+function updateSectionDropdownLabel(subjectId) {
+
+    const count =
+        db.sections.filter(sec =>
+            document.getElementById(
+                `assignSubjSectionCheck_${subjectId}_${sec.id}`
+            )?.checked
+        ).length;
+
+    const label =
+        document.querySelector(
+            `#sectionDropdownLabel_${subjectId} span`
+        );
+
+    label.textContent =
+        count === 0
+            ? "Select sections"
+            : `${count} section${count > 1 ? "s" : ""} selected`;
+
+}
+
+
 function addAssignment(event) {
 
     event.preventDefault();
@@ -1554,25 +1610,56 @@ function addAssignment(event) {
 
     }
 
+    const missingSection =
+        selectedSubjects.find(s =>
+            !db.sections.some(sec =>
+                document.getElementById(
+                    `assignSubjSectionCheck_${s.id}_${sec.id}`
+                )?.checked
+            )
+        );
+
+    if (missingSection) {
+
+        toast(`Select at least one section for ${missingSection.name}.`);
+
+        return;
+
+    }
+
+    let created = 0;
+
     selectedSubjects.forEach(s => {
 
-        db.assignments.push({
+        const hours =
+            Number(
+                document.getElementById(`assignSubjHours_${s.id}`).value
+            );
 
-            id: Date.now() + s.id,
+        const selectedSections =
+            db.sections.filter(sec =>
+                document.getElementById(
+                    `assignSubjSectionCheck_${s.id}_${sec.id}`
+                )?.checked
+            );
 
-            teacherId,
+        selectedSections.forEach(sec => {
 
-            subjectId: s.id,
+            db.assignments.push({
 
-            sectionId:
-                Number(
-                    document.getElementById(`assignSubjSection_${s.id}`).value
-                ),
+                id: Date.now() + created,
 
-            hours:
-                Number(
-                    document.getElementById(`assignSubjHours_${s.id}`).value
-                )
+                teacherId,
+
+                subjectId: s.id,
+
+                sectionId: sec.id,
+
+                hours
+
+            });
+
+            created++;
 
         });
 
@@ -1585,9 +1672,9 @@ function addAssignment(event) {
     renderAll();
 
     toast(
-        selectedSubjects.length === 1
+        created === 1
             ? "Teaching assignment added."
-            : `${selectedSubjects.length} teaching assignments added.`
+            : `${created} teaching assignments added.`
     );
 
 }

@@ -1261,6 +1261,76 @@ tbody tr:hover {
     padding: 10px 0;
 }
 
+.subject-item {
+    border-bottom: 1px solid var(--border);
+}
+
+.subject-item:last-child {
+    border-bottom: 0;
+}
+
+.subject-item .subject-row {
+    border-bottom: 0;
+    padding: 8px 0 4px;
+}
+
+.section-dropdown-toggle {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border: 1px solid var(--border);
+    background: white;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 11px;
+    color: var(--text);
+}
+
+.section-dropdown-toggle:hover {
+    border-color: var(--primary);
+}
+
+.section-dropdown-toggle.open .subject-dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+.section-dropdown-panel {
+    display: none;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 0 0 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--background);
+    padding: 8px;
+}
+
+.section-dropdown-panel.show {
+    display: flex;
+}
+
+.section-check-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 400;
+    background: white;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 10px 5px 8px;
+    cursor: pointer;
+}
+
+.section-check-pill input[type="checkbox"] {
+    width: 13px;
+    height: 13px;
+    accent-color: var(--primary);
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
 
 /* TOAST */
 
