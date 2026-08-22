@@ -17,6 +17,19 @@ let db = JSON.parse(localStorage.getItem("smartschedDB")) || {
     rooms: [],
     assignments: [],
     schedule: [],
+
+    /*
+     Scheduling Objectives — stored as 0–1 weights so they persist
+     across reloads and actually drive generateSchedule() instead
+     of just sitting on the sliders as decoration.
+    */
+    objectives: {
+        workloadBalance: 0.85,
+        roomEfficiency: 0.75,
+        morningPreference: 0.60,
+        teacherFreePeriods: 0.80
+    },
+
     timeslots: [
         { id: 1, time: "7:30–8:30", type: "class" },
         { id: 2, time: "8:30–9:30", type: "class" },
@@ -31,6 +44,24 @@ let db = JSON.parse(localStorage.getItem("smartschedDB")) || {
     ]
 
 };
+
+/*
+ Backfill for anyone with existing saved data from before the
+ Scheduling Objectives sliders were wired up — without this,
+ users who already have a smartschedDB in localStorage would hit
+ "Cannot read properties of undefined" the first time
+ generateSchedule() reads db.objectives.
+*/
+if (!db.objectives) {
+
+    db.objectives = {
+        workloadBalance: 0.85,
+        roomEfficiency: 0.75,
+        morningPreference: 0.60,
+        teacherFreePeriods: 0.80
+    };
+
+}
 
 
 /* =========================================================
@@ -56,6 +87,111 @@ function saveDB() {
         "smartschedDB",
         JSON.stringify(db)
     );
+
+}
+
+
+/* =========================================================
+   SCHEDULING OBJECTIVES
+   The four sliders on the Generate page. Values are read live
+   from the DOM (so whatever the user has dragged them to right
+   before clicking Generate is what's used), persisted to
+   db.objectives so they survive a refresh, and restored onto
+   the sliders on load.
+   ========================================================= */
+
+let objectiveWeights = db.objectives;
+
+function readObjectiveWeights() {
+
+    const pct = id => {
+
+        const el = document.getElementById(id);
+
+        return el ? Number(el.value) / 100 : null;
+
+    };
+
+    const workloadBalance = pct("objWorkloadBalance");
+    const roomEfficiency = pct("objRoomEfficiency");
+    const morningPreference = pct("objMorningPreference");
+    const teacherFreePeriods = pct("objTeacherFreePeriods");
+
+    return {
+
+        workloadBalance:
+            workloadBalance === null
+                ? db.objectives.workloadBalance
+                : workloadBalance,
+
+        roomEfficiency:
+            roomEfficiency === null
+                ? db.objectives.roomEfficiency
+                : roomEfficiency,
+
+        morningPreference:
+            morningPreference === null
+                ? db.objectives.morningPreference
+                : morningPreference,
+
+        teacherFreePeriods:
+            teacherFreePeriods === null
+                ? db.objectives.teacherFreePeriods
+                : teacherFreePeriods
+
+    };
+
+}
+
+function updateObjectiveDisplay(id) {
+
+    const el = document.getElementById(id);
+    const valueEl = document.getElementById(id + "Value");
+
+    if (valueEl) {
+        valueEl.textContent = el.value + "%";
+    }
+
+    /*
+     Persist immediately on drag, not just at Generate time, so
+     the preference survives a refresh even if the user never
+     clicks Generate this session.
+    */
+
+    objectiveWeights = readObjectiveWeights();
+    db.objectives = objectiveWeights;
+
+    saveDB();
+
+}
+
+function initObjectiveSliders() {
+
+    const stored = db.objectives;
+
+    const map = {
+        objWorkloadBalance: stored.workloadBalance,
+        objRoomEfficiency: stored.roomEfficiency,
+        objMorningPreference: stored.morningPreference,
+        objTeacherFreePeriods: stored.teacherFreePeriods
+    };
+
+    Object.entries(map).forEach(([id, weight]) => {
+
+        const el = document.getElementById(id);
+        const valueEl = document.getElementById(id + "Value");
+
+        if (!el || weight === undefined) return;
+
+        el.value = Math.round(weight * 100);
+
+        if (valueEl) {
+            valueEl.textContent = el.value + "%";
+        }
+
+    });
+
+    objectiveWeights = stored;
 
 }
 
@@ -1696,6 +1832,168 @@ function deleteAssignment(id) {
    SCHEDULE GENERATOR
    ========================================================= */
 
+/* =========================================================
+   OBJECTIVE-DRIVEN HELPERS
+   These give the four Scheduling Objective sliders an actual
+   effect on generateSchedule(), instead of doing nothing.
+   ========================================================= */
+
+/*
+ ROOM EFFICIENCY — when more than one room could host a class,
+ choosing the smallest room that still fits keeps larger rooms
+ free for classes that actually need the space, instead of a
+ 30-seat section parking itself in a 50-seat room by coincidence
+ of array order. Below the halfway mark on the slider, we keep
+ the original "first available" behavior instead.
+*/
+function pickRoomByEfficiency(candidates) {
+
+    if (!candidates || candidates.length === 0) return null;
+
+    if (objectiveWeights.roomEfficiency >= 0.5) {
+
+        return [...candidates].sort(
+            (a, b) => a.capacity - b.capacity
+        )[0];
+
+    }
+
+    return candidates[0];
+
+}
+
+/*
+ TEACHER FREE PERIODS — scores how "back-to-back" a candidate
+ window would be for a teacher on a given day, by checking
+ whether the period immediately before or after the window is
+ already one of their classes. Used to prefer options that leave
+ an actual gap when this objective is prioritized.
+*/
+function teacherAdjacencyPenalty(teacherId, day, window) {
+
+    const orderedSlots = db.timeslots;
+
+    const firstIndex =
+        orderedSlots.findIndex(s => s.id === window[0].id);
+
+    const lastIndex =
+        orderedSlots.findIndex(
+            s => s.id === window[window.length - 1].id
+        );
+
+    const beforeSlot = orderedSlots[firstIndex - 1];
+    const afterSlot = orderedSlots[lastIndex + 1];
+
+    let penalty = 0;
+
+    [beforeSlot, afterSlot].forEach(slot => {
+
+        if (!slot || slot.type !== "class") return;
+
+        const busy =
+            db.schedule.some(
+                x =>
+                    x.teacherId === teacherId &&
+                    x.day === day &&
+                    x.slotId === slot.id
+            );
+
+        if (busy) penalty++;
+
+    });
+
+    return penalty;
+
+}
+
+/*
+ MORNING SUBJECT PREFERENCE — a subject counts as "important"
+ for this purpose if its weekly hours are at or above the median
+ across all subjects (a proxy for core/major subjects, since the
+ data model doesn't have an explicit importance flag). Windows
+ from getConsecutivePeriodWindows() are already in chronological
+ order, so biasing toward morning just means searching them in
+ that natural order instead of the usual per-assignment rotation
+ that spreads different assignments across different starting
+ slots.
+*/
+function getMedianSubjectHours() {
+
+    const hours =
+        db.subjects
+            .map(s => Number(s.hours) || 0)
+            .sort((a, b) => a - b);
+
+    if (hours.length === 0) return 0;
+
+    return hours[Math.floor(hours.length / 2)];
+
+}
+
+function isCoreSubject(subject, medianHours) {
+
+    return (Number(subject.hours) || 0) >= medianHours;
+
+}
+
+/*
+ TEACHER WORKLOAD BALANCE — controls the ORDER assignments are
+ attempted in, not which room/window each one ends up with. When
+ a teacher's whole list of assignments is processed back-to-back
+ (the raw array order), that teacher's classes get first pick of
+ every contested window before the next teacher's turn even
+ starts. Interleaving teachers round-robin means no single
+ teacher's classes systematically win every contested slot.
+ Below the halfway mark, the original array order is kept as-is.
+*/
+function buildAssignmentProcessingOrder() {
+
+    const indexed =
+        db.assignments.map((assignment, originalIndex) => (
+            { assignment, originalIndex }
+        ));
+
+    if (objectiveWeights.workloadBalance < 0.5) {
+        return indexed;
+    }
+
+    const byTeacher = {};
+
+    indexed.forEach(item => {
+
+        const key = item.assignment.teacherId;
+
+        if (!byTeacher[key]) byTeacher[key] = [];
+
+        byTeacher[key].push(item);
+
+    });
+
+    const queues = Object.values(byTeacher);
+    const merged = [];
+
+    let added = true;
+
+    while (added) {
+
+        added = false;
+
+        queues.forEach(queue => {
+
+            if (queue.length) {
+                merged.push(queue.shift());
+                added = true;
+            }
+
+        });
+
+    }
+
+    return merged;
+
+}
+
+
 function generateSchedule() {
 
     if (
@@ -1720,6 +2018,17 @@ function generateSchedule() {
 
         db.schedule = [];
 
+        /*
+         Read the four Scheduling Objective sliders live and store
+         them globally so the room/window helper functions (which
+         run deep inside this generation pass) can see them too.
+        */
+
+        objectiveWeights = readObjectiveWeights();
+        db.objectives = objectiveWeights;
+
+        const medianSubjectHours = getMedianSubjectHours();
+
         const classSlots =
             db.timeslots.filter(
                 s => s.type === "class"
@@ -1727,7 +2036,18 @@ function generateSchedule() {
 
         const unplaced = [];
 
-        db.assignments.forEach((assignment, assignmentIndex) => {
+        const processingOrder = buildAssignmentProcessingOrder();
+
+        processingOrder.forEach(({ assignment, originalIndex }) => {
+
+            /*
+             assignmentIndex keeps the SAME meaning as before
+             (a stable identity used for window rotation) even
+             though the order we now iterate in may differ —
+             Teacher Workload Balance changes WHICH assignment
+             goes first, not the rotation math each one uses.
+            */
+            const assignmentIndex = originalIndex;
 
             const subject =
                 db.subjects.find(
@@ -1833,6 +2153,30 @@ function generateSchedule() {
                     .map(Number)
                     .sort((a, b) => b - a);
 
+            /*
+             MORNING SUBJECT PREFERENCE:
+             windows from getConsecutivePeriodWindows() are
+             already in chronological (morning-first) order. The
+             normal rotation offset (assignmentIndex) exists to
+             spread different assignments across different
+             starting windows so they don't all pile onto period
+             1. For a core subject, when this objective is
+             prioritized, we shrink that offset toward zero so
+             the search starts from the earliest window first —
+             at 100% it always starts at window 0.
+            */
+
+            const isCore =
+                isCoreSubject(subject, medianSubjectHours);
+
+            const rotationOffset =
+                (isCore && objectiveWeights.morningPreference >= 0.5)
+                    ? Math.round(
+                        assignmentIndex *
+                        (1 - objectiveWeights.morningPreference)
+                    )
+                    : assignmentIndex;
+
             sortedLengths.forEach(length => {
 
                 const count = lengthGroups[length];
@@ -1868,7 +2212,7 @@ function generateSchedule() {
 
                     const window =
                         windows[
-                            (assignmentIndex + attempt) %
+                            (rotationOffset + attempt) %
                             windows.length
                         ];
 
@@ -1885,6 +2229,26 @@ function generateSchedule() {
                         if (!dayRoom) continue;
 
                         availableDays.push({ day, room: dayRoom });
+
+                    }
+
+                    /*
+                     TEACHER FREE PERIODS: when prioritized, try
+                     the day options that leave this teacher an
+                     actual gap first, instead of always taking
+                     whichever days happened to come first.
+                    */
+
+                    if (objectiveWeights.teacherFreePeriods >= 0.5) {
+
+                        availableDays.sort((a, b) =>
+                            teacherAdjacencyPenalty(
+                                teacher.id, a.day, window
+                            ) -
+                            teacherAdjacencyPenalty(
+                                teacher.id, b.day, window
+                            )
+                        );
 
                     }
 
@@ -1938,7 +2302,7 @@ function generateSchedule() {
 
                         const window =
                             windows[
-                                (assignmentIndex + guard) %
+                                (rotationOffset + guard) %
                                 windows.length
                             ];
 
@@ -2158,8 +2522,8 @@ function resolveWindowRoom(
      other suitable room that's free across every period.
     */
 
-    const alternative =
-        db.rooms.find(room => {
+    const alternativeCandidates =
+        db.rooms.filter(room => {
 
             if (room.id === fixedRoom.id) return false;
 
@@ -2186,7 +2550,13 @@ function resolveWindowRoom(
 
         });
 
-    return alternative || null;
+    /*
+     ROOM EFFICIENCY: among rooms that all work, pickRoomByEfficiency
+     favors the tightest capacity fit instead of just the first one
+     found in db.rooms order.
+    */
+
+    return pickRoomByEfficiency(alternativeCandidates);
 
 }
 
@@ -2247,11 +2617,13 @@ function resolveTeacherRoom(teacher, subject, section) {
      keep the same room going forward.
     */
 
-    const autoRoom =
-        db.rooms.find(room =>
+    const autoCandidates =
+        db.rooms.filter(room =>
             room.type !== "Gym" &&
             room.capacity >= Number(section.students)
-        ) || null;
+        );
+
+    const autoRoom = pickRoomByEfficiency(autoCandidates);
 
     if (autoRoom && !hadDesignatedRoom) {
         teacher.roomId = autoRoom.id;
@@ -2319,25 +2691,28 @@ function findAvailableRoomOfType(
     slotId
 ) {
 
-    return db.rooms.find(room => {
+    const candidates =
+        db.rooms.filter(room => {
 
-        if (room.type !== type) return false;
+            if (room.type !== type) return false;
 
-        if (room.capacity < Number(section.students)) {
-            return false;
-        }
+            if (room.capacity < Number(section.students)) {
+                return false;
+            }
 
-        const roomBusy =
-            db.schedule.some(
-                x =>
-                    x.roomId === room.id &&
-                    x.day === day &&
-                    x.slotId === slotId
-            );
+            const roomBusy =
+                db.schedule.some(
+                    x =>
+                        x.roomId === room.id &&
+                        x.day === day &&
+                        x.slotId === slotId
+                );
 
-        return !roomBusy;
+            return !roomBusy;
 
-    }) || null;
+        });
+
+    return pickRoomByEfficiency(candidates);
 
 }
 
@@ -3620,6 +3995,8 @@ function saveSettings() {
    ========================================================= */
 
 function renderAll() {
+
+    initObjectiveSliders();
 
     updateDashboard();
 

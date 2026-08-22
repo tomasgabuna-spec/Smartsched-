@@ -636,7 +636,8 @@
                                 <span>Distribute teaching hours fairly.</span>
                             </div>
 
-                            <input type="range" value="85">
+                            <input type="range" id="objWorkloadBalance" min="0" max="100" value="85" oninput="updateObjectiveDisplay('objWorkloadBalance')">
+                            <div class="objective-value" id="objWorkloadBalanceValue">85%</div>
 
                         </div>
 
@@ -647,7 +648,8 @@
                                 <span>Improve classroom utilization.</span>
                             </div>
 
-                            <input type="range" value="75">
+                            <input type="range" id="objRoomEfficiency" min="0" max="100" value="75" oninput="updateObjectiveDisplay('objRoomEfficiency')">
+                            <div class="objective-value" id="objRoomEfficiencyValue">75%</div>
 
                         </div>
 
@@ -658,7 +660,8 @@
                                 <span>Prefer important subjects earlier.</span>
                             </div>
 
-                            <input type="range" value="60">
+                            <input type="range" id="objMorningPreference" min="0" max="100" value="60" oninput="updateObjectiveDisplay('objMorningPreference')">
+                            <div class="objective-value" id="objMorningPreferenceValue">60%</div>
 
                         </div>
 
@@ -669,7 +672,8 @@
                                 <span>Provide reasonable breaks.</span>
                             </div>
 
-                            <input type="range" value="80">
+                            <input type="range" id="objTeacherFreePeriods" min="0" max="100" value="80" oninput="updateObjectiveDisplay('objTeacherFreePeriods')">
+                            <div class="objective-value" id="objTeacherFreePeriodsValue">80%</div>
 
                         </div>
 
