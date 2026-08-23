@@ -278,6 +278,31 @@ nav {
     display: block;
 }
 
+
+/* DASHBOARD BACKGROUND WATERMARK */
+
+#dashboard {
+    position: relative;
+}
+
+#dashboard::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("assets/anhs-logo.jpg");
+    background-repeat: no-repeat;
+    background-position: center 40px;
+    background-size: 700px;
+    opacity: 0.14;
+    pointer-events: none;
+    z-index: 0;
+}
+
+#dashboard > * {
+    position: relative;
+    z-index: 1;
+}
+
 .page-heading {
     display: flex;
     justify-content: space-between;
