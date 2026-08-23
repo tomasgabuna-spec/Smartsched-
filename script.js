@@ -284,6 +284,9 @@ function updateDashboard() {
 
     const conflicts = detectConflicts();
 
+    const unplacedCount =
+        (db.unplaced || []).length;
+
     document.getElementById("teacherConflicts").textContent =
         conflicts.teacher;
 
@@ -294,7 +297,7 @@ function updateDashboard() {
         conflicts.section;
 
     document.getElementById("sidebarConflict").textContent =
-        conflicts.total;
+        conflicts.total + unplacedCount;
 
     const health = calculateHealth();
 
@@ -2356,6 +2359,8 @@ function generateSchedule() {
 
         });
 
+        db.unplaced = unplaced;
+
         saveDB();
 
         renderAll();
@@ -3298,9 +3303,12 @@ function renderConflicts() {
     const conflicts =
         detectConflicts();
 
+    const unplaced =
+        db.unplaced || [];
+
     container.innerHTML = "";
 
-    if (conflicts.total === 0) {
+    if (conflicts.total === 0 && unplaced.length === 0) {
 
         container.innerHTML = `
 
@@ -3355,6 +3363,26 @@ function renderConflicts() {
         );
 
     }
+
+    /*
+     SHORTAGE WARNINGS — classes the generator couldn't place at
+     all (e.g. no free Computer Laboratory slot left for CSS/
+     Empowerment Technologies) used to just vanish silently.
+     These surface each one individually so it's clear which
+     assignment needs a fix (add a room, free a slot, etc.)
+     rather than a swallowed failure.
+    */
+
+    unplaced.forEach(reason => {
+
+        addConflictCard(
+            container,
+            "Unscheduled Class",
+            reason,
+            "HIGH"
+        );
+
+    });
 
 }
 
@@ -3573,6 +3601,17 @@ function loadDemoData() {
             roomId: 6,
             isAdviser: false,
             advisorySectionId: null
+        },
+
+        {
+            id: 6,
+            name: "Liza Fernandez",
+            employeeId: "T-006",
+            department: "ICT",
+            maxHours: 30,
+            roomId: 5,
+            isAdviser: false,
+            advisorySectionId: null
         }
 
     ];
@@ -3632,6 +3671,24 @@ function loadDemoData() {
             hours: 3,
             minutes: 60,
             roomType: "Regular Classroom"
+        },
+
+        {
+            id: 7,
+            code: "EMPTECH",
+            name: "Empowerment Technologies",
+            hours: 3,
+            minutes: 60,
+            roomType: "Computer Laboratory"
+        },
+
+        {
+            id: 8,
+            code: "CSS",
+            name: "Computer Systems Servicing",
+            hours: 4,
+            minutes: 60,
+            roomType: "Computer Laboratory"
         }
 
     ];
@@ -3830,12 +3887,29 @@ function loadDemoData() {
             subjectId: 5,
             sectionId: 3,
             hours: 2
+        },
+
+        {
+            id: 16,
+            teacherId: 6,
+            subjectId: 7,
+            sectionId: 1,
+            hours: 3
+        },
+
+        {
+            id: 17,
+            teacherId: 6,
+            subjectId: 8,
+            sectionId: 2,
+            hours: 4
         }
 
     ];
 
 
     db.schedule = [];
+    db.unplaced = [];
 
     saveDB();
 
@@ -3944,6 +4018,132 @@ function exportData() {
     URL.revokeObjectURL(url);
 
     toast("Database exported.");
+
+}
+
+
+/* =========================================================
+   IMPORT DATA
+   ========================================================= */
+
+function triggerImport() {
+
+    document.getElementById(
+        "importFileInput"
+    ).click();
+
+}
+
+function importData(event) {
+
+    const file = event.target.files[0];
+
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = e => {
+
+        let parsed;
+
+        try {
+
+            parsed = JSON.parse(e.target.result);
+
+        } catch (err) {
+
+            toast("Import failed: not a valid JSON file.");
+            event.target.value = "";
+            return;
+
+        }
+
+        /*
+         Sanity-check the shape before trusting it — a backup
+         from this app should have these arrays. This won't
+         catch every malformed file, but it stops obviously
+         wrong ones (e.g. a random JSON file) from wiping the
+         current database.
+        */
+        const requiredArrays = [
+            "teachers",
+            "subjects",
+            "sections",
+            "rooms",
+            "assignments",
+            "schedule"
+        ];
+
+        const looksValid =
+            parsed &&
+            typeof parsed === "object" &&
+            requiredArrays.every(
+                key => Array.isArray(parsed[key])
+            );
+
+        if (!looksValid) {
+
+            toast(
+                "Import failed: file doesn't look like a SMARTSCHED backup."
+            );
+
+            event.target.value = "";
+            return;
+
+        }
+
+        if (
+            !confirm(
+                "Import this file? It will replace all current SMARTSCHED data."
+            )
+        ) {
+
+            event.target.value = "";
+            return;
+
+        }
+
+        /*
+         Backfill anything an older or hand-edited export might
+         be missing, same as the startup backfill above, so a
+         partial file doesn't crash renderAll().
+        */
+        if (!Array.isArray(parsed.timeslots) || parsed.timeslots.length === 0) {
+
+            parsed.timeslots = db.timeslots;
+
+        }
+
+        if (!parsed.objectives) {
+
+            parsed.objectives = {
+                workloadBalance: 0.85,
+                roomEfficiency: 0.75,
+                morningPreference: 0.60,
+                teacherFreePeriods: 0.80
+            };
+
+        }
+
+        db = parsed;
+
+        saveDB();
+        renderAll();
+
+        toast("Database imported.");
+
+        event.target.value = "";
+
+    };
+
+    reader.onerror = () => {
+
+        toast("Import failed: couldn't read the file.");
+        event.target.value = "";
+
+    };
+
+    reader.readAsText(file);
 
 }
 

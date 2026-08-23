@@ -1082,6 +1082,17 @@
                             Export Data
                         </button>
 
+                        <button class="secondary-btn" onclick="triggerImport()">
+                            Import Data
+                        </button>
+
+                        <input
+                            type="file"
+                            id="importFileInput"
+                            accept=".json,application/json"
+                            style="display:none"
+                            onchange="importData(event)">
+
                         <button class="secondary-btn" onclick="loadDemoData()">
                             Restore Demo Data
                         </button>
@@ -1091,6 +1102,35 @@
                         </button>
 
                     </div>
+
+                    <hr>
+
+                    <h2>Known Limitations</h2>
+
+                    <ul class="limitations-list">
+                        <li>
+                            Shared backend/database with ANHS SmartSchool — right now each app has its own separate
+                            <code>localStorage</code>; teachers/sections/subjects entered in one don't show up in the other.
+                        </li>
+                        <li>
+                            Upgrade the generator to real constraint-solving — it currently places classes greedily
+                            then reports conflicts after the fact, rather than avoiding unavoidable clashes during
+                            generation (e.g. via backtracking or a solver like Google OR-Tools).
+                        </li>
+                        <li>
+                            Add authentication + roles — anyone with the link can currently edit teachers, rooms, or
+                            the whole schedule; no login exists.
+                        </li>
+                        <li>
+                            No print stylesheet — <code>printSchedule()</code> calls <code>window.print()</code> on
+                            the live page, so printed schedules include the sidebar and buttons instead of a clean layout.
+                        </li>
+                        <li>
+                            Single school year only — Settings has an Academic Year field, but nothing in the
+                            database is scoped to it, so generating a new year's schedule overwrites the current one
+                            instead of archiving it.
+                        </li>
+                    </ul>
 
                 </div>
 
