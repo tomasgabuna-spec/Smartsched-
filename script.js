@@ -2823,51 +2823,77 @@ function generateSchedule() {
                  clean parallel pattern. Place meeting blocks one at
                  a time on a best-effort basis instead of dropping
                  them.
+
+                 BUGFIX: this used to advance both the window index
+                 and the day index off the SAME incrementing guard
+                 counter (`windows[(rotationOffset+guard) %
+                 windows.length]` paired with `days[guard %
+                 days.length]`). Since windows.length and days.length
+                 are usually equal (5 meeting windows, 5 weekdays),
+                 incrementing both together only ever walks a single
+                 diagonal of the day×window grid — repeating the
+                 same 5 combinations forever instead of trying all
+                 25 — so a genuinely free slot elsewhere in the grid
+                 could be missed entirely and the meeting reported as
+                 unplaceable even though room existed. Nested loops
+                 below try every window against every day at least
+                 once before giving up.
                 */
 
                 if (placedCount < count) {
 
                     let remaining = count - placedCount;
-                    let guard = 0;
 
-                    while (remaining > 0 && guard < 300) {
-
-                        guard++;
+                    outerFallback:
+                    for (
+                        let wOffset = 0;
+                        wOffset < windows.length;
+                        wOffset++
+                    ) {
 
                         const window =
                             windows[
-                                (rotationOffset + guard) %
+                                (rotationOffset + wOffset) %
                                 windows.length
                             ];
 
-                        const day =
-                            days[guard % days.length];
+                        for (
+                            let dOffset = 0;
+                            dOffset < days.length;
+                            dOffset++
+                        ) {
 
-                        const room =
-                            resolveWindowRoom(
-                                teacher, subject, section,
-                                isPE, fixedRoom, day, window
-                            );
+                            if (remaining <= 0) break outerFallback;
 
-                        if (!room) continue;
+                            const day = days[dOffset];
 
-                        window.forEach(slot => {
+                            const room =
+                                resolveWindowRoom(
+                                    teacher, subject, section,
+                                    isPE, fixedRoom, day, window
+                                );
 
-                            db.schedule.push({
+                            if (!room) continue;
 
-                                id: Date.now() + Math.random(),
-                                day: day,
-                                slotId: slot.id,
-                                teacherId: teacher.id,
-                                subjectId: subject.id,
-                                sectionId: section.id,
-                                roomId: room.id
+                            window.forEach(slot => {
+
+                                db.schedule.push({
+
+                                    id: Date.now() + Math.random(),
+                                    day: day,
+                                    slotId: slot.id,
+                                    teacherId: teacher.id,
+                                    subjectId: subject.id,
+                                    sectionId: section.id,
+                                    roomId: room.id
+
+                                });
 
                             });
 
-                        });
+                            remaining--;
 
-                        remaining--;
+                        }
 
                     }
 
