@@ -1997,6 +1997,250 @@ function buildAssignmentProcessingOrder() {
 }
 
 
+/* =========================================================
+   PRIORITY SCHEDULING RULES
+   (adviser homeroom period + CSS11 / CSS12 fixed blocks)
+   ========================================================= */
+
+/*
+ The morning's class periods are timeslot ids 1, 2, 4, 5 (in
+ that chronological order — id 3 is the recess break). "2nd to
+ 3rd period in the morning" is therefore the back-to-back pair
+ [2, 4].
+*/
+const CSS11_WINDOW_SLOT_IDS = [2, 4];
+
+/*
+ The afternoon's class periods are timeslot ids 7, 8, 9, 10
+ (id 6 is the lunch break). "3rd to 4th period in the
+ afternoon" is therefore the back-to-back pair [9, 10].
+*/
+const CSS12_WINDOW_SLOT_IDS = [9, 10];
+
+/*
+ Matches a subject named/coded "CSS11" however it was typed in
+ (e.g. "CSS11", "CSS 11", "css-11"). Falls back to matching a
+ general "CSS" subject taught specifically to a Grade 11
+ section, in case the two grade levels share one subject entry
+ instead of separate CSS11 / CSS12 records.
+*/
+function isCSS11Subject(subject, section) {
+
+    if (!subject) return false;
+
+    const normalize = v =>
+        (v || "").toString().toLowerCase().replace(/[\s_-]/g, "");
+
+    const code = normalize(subject.code);
+    const name = normalize(subject.name);
+
+    if (code === "css11" || name === "css11") return true;
+    if (code.includes("css11") || name.includes("css11")) return true;
+
+    const isGeneralCSS =
+        code === "css" || name.includes("computer systems servicing");
+
+    return (
+        isGeneralCSS &&
+        !!section &&
+        (section.grade || "").toString().includes("11")
+    );
+
+}
+
+function isCSS12Subject(subject, section) {
+
+    if (!subject) return false;
+
+    const normalize = v =>
+        (v || "").toString().toLowerCase().replace(/[\s_-]/g, "");
+
+    const code = normalize(subject.code);
+    const name = normalize(subject.name);
+
+    if (code === "css12" || name === "css12") return true;
+    if (code.includes("css12") || name.includes("css12")) return true;
+
+    const isGeneralCSS =
+        code === "css" || name.includes("computer systems servicing");
+
+    return (
+        isGeneralCSS &&
+        !!section &&
+        (section.grade || "").toString().includes("12")
+    );
+
+}
+
+/*
+ ADVISER HOMEROOM PINNING — every teacher who is a class
+ adviser gets their FIRST class period of the day (the earliest
+ class timeslot, chronologically) reserved for their own
+ advisory section, every school day. Placed straight into
+ db.schedule before anything else, so no other class can be
+ assigned to that teacher, that section, or that room during
+ period 1.
+*/
+function pinAdviserHomeroomPeriods(classSlots, unplaced) {
+
+    const advisoryPeriod = classSlots[0];
+
+    if (!advisoryPeriod) return;
+
+    db.teachers
+        .filter(t => t.isAdviser && t.advisorySectionId)
+        .forEach(teacher => {
+
+            const section =
+                db.sections.find(
+                    s => s.id === teacher.advisorySectionId
+                );
+
+            if (!section) return;
+
+            let room =
+                db.rooms.find(r => r.id === teacher.roomId);
+
+            if (
+                !room ||
+                room.capacity < Number(section.students)
+            ) {
+
+                room =
+                    db.rooms.find(
+                        r => r.capacity >= Number(section.students)
+                    ) || db.rooms[0];
+
+            }
+
+            if (!room) {
+
+                unplaced.push(
+                    `${teacher.name} – Advisory (${section.grade} ${section.name}): no room available for the advisory period`
+                );
+
+                return;
+
+            }
+
+            days.forEach(day => {
+
+                db.schedule.push({
+
+                    id: Date.now() + Math.random(),
+                    day: day,
+                    slotId: advisoryPeriod.id,
+                    teacherId: teacher.id,
+                    subjectId: null,
+                    sectionId: section.id,
+                    roomId: room.id,
+                    isAdvisory: true
+
+                });
+
+            });
+
+        });
+
+}
+
+/*
+ FORCE-PLACE A SUBJECT INTO A MANDATED PERIOD BLOCK — used for
+ CSS11 / CSS12. Unlike the general search in generateSchedule(),
+ this does NOT look for any free window; it only tries the exact
+ slot ids it's given, across the allowed days, and reports
+ whatever it couldn't fit as unplaced (e.g. because the adviser
+ pin or another rule already claimed that room/teacher/section
+ at that time).
+*/
+function forcePlaceSpecialSubject(
+    assignment, subject, section, teacher,
+    classSlots, windowSlotIds, allowedDays, unplaced
+) {
+
+    const window =
+        windowSlotIds
+            .map(id => classSlots.find(s => s.id === id))
+            .filter(Boolean);
+
+    if (window.length !== windowSlotIds.length) {
+
+        unplaced.push(
+            `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): the required period block isn't available in the current timeslot setup`
+        );
+
+        return;
+
+    }
+
+    const isPE = isPESubject(subject);
+
+    const fixedRoom =
+        isPE ? null : resolveTeacherRoom(teacher, subject, section);
+
+    if (!isPE && !fixedRoom) {
+
+        unplaced.push(
+            `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): no suitable classroom available`
+        );
+
+        return;
+
+    }
+
+    const totalPeriods = Number(assignment.hours) || 0;
+
+    const meetingsNeeded =
+        Math.max(
+            1,
+            Math.round(totalPeriods / windowSlotIds.length)
+        );
+
+    let placed = 0;
+
+    for (const day of allowedDays) {
+
+        if (placed >= meetingsNeeded) break;
+
+        const room =
+            resolveWindowRoom(
+                teacher, subject, section,
+                isPE, fixedRoom, day, window
+            );
+
+        if (!room) continue;
+
+        window.forEach(slot => {
+
+            db.schedule.push({
+
+                id: Date.now() + Math.random(),
+                day: day,
+                slotId: slot.id,
+                teacherId: teacher.id,
+                subjectId: subject.id,
+                sectionId: section.id,
+                roomId: room.id
+
+            });
+
+        });
+
+        placed++;
+
+    }
+
+    if (placed < meetingsNeeded) {
+
+        unplaced.push(
+            `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): only ${placed} of ${meetingsNeeded} required meeting(s) could be placed in the mandated period block`
+        );
+
+    }
+
+}
+
+
 function generateSchedule() {
 
     if (
@@ -2039,7 +2283,84 @@ function generateSchedule() {
 
         const unplaced = [];
 
-        const processingOrder = buildAssignmentProcessingOrder();
+        /*
+         PRIORITY PLACEMENT PASS — runs before the general
+         assignment loop so these three rules always win the
+         slots they need, instead of competing for them:
+
+           1. Every class adviser's FIRST period of the day is
+              reserved for their own advisory section (homeroom),
+              every day of the week.
+           2. Any "CSS11" subject is locked into the 2nd–3rd
+              periods of the morning (a back-to-back block).
+           3. Any "CSS12" subject is locked into the 3rd–4th
+              periods of the afternoon, on every day EXCEPT
+              Monday.
+
+         Both this pass and the pinned advisory entries write
+         straight into db.schedule, so the normal teacher /
+         section / room availability checks used later on
+         (resolveWindowRoom, etc.) automatically treat these
+         slots as already taken.
+        */
+
+        pinAdviserHomeroomPeriods(classSlots, unplaced);
+
+        const handledAssignmentIds = new Set();
+
+        db.assignments.forEach(assignment => {
+
+            const subject =
+                db.subjects.find(
+                    s => s.id === assignment.subjectId
+                );
+
+            const section =
+                db.sections.find(
+                    s => s.id === assignment.sectionId
+                );
+
+            const teacher =
+                db.teachers.find(
+                    t => t.id === assignment.teacherId
+                );
+
+            if (!subject || !section || !teacher) return;
+
+            if (isCSS11Subject(subject, section)) {
+
+                forcePlaceSpecialSubject(
+                    assignment, subject, section, teacher,
+                    classSlots,
+                    CSS11_WINDOW_SLOT_IDS,
+                    days,
+                    unplaced
+                );
+
+                handledAssignmentIds.add(assignment.id);
+
+            } else if (isCSS12Subject(subject, section)) {
+
+                forcePlaceSpecialSubject(
+                    assignment, subject, section, teacher,
+                    classSlots,
+                    CSS12_WINDOW_SLOT_IDS,
+                    days.filter(d => d !== "Monday"),
+                    unplaced
+                );
+
+                handledAssignmentIds.add(assignment.id);
+
+            }
+
+        });
+
+        const processingOrder =
+            buildAssignmentProcessingOrder()
+                .filter(
+                    ({ assignment }) =>
+                        !handledAssignmentIds.has(assignment.id)
+                );
 
         processingOrder.forEach(({ assignment, originalIndex }) => {
 
@@ -2821,16 +3142,21 @@ function renderSchedule() {
                         r => r.id === item.roomId
                     );
 
+                const itemClass =
+                    item.isAdvisory
+                        ? "schedule-item schedule-item-advisory"
+                        : "schedule-item";
+
                 cell += `
 
-                    <div class="schedule-item">
+                    <div class="${itemClass}">
 
                         <strong>
-                            ${subject?.code || "Subject"}
+                            ${item.isAdvisory ? "ADVISORY" : (subject?.code || "Subject")}
                         </strong>
 
                         <span>
-                            ${subject?.name || ""}
+                            ${item.isAdvisory ? "Homeroom / Advisory" : (subject?.name || "")}
                         </span>
 
                         <span>

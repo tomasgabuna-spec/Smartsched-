@@ -913,6 +913,11 @@ tbody tr:hover {
     font-size: 11px;
 }
 
+.schedule-item-advisory {
+    background: #fff4e0;
+    border-left: 4px solid #e8a33d;
+}
+
 .schedule-item span {
     display: block;
     font-size: 9px;
