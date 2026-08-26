@@ -2616,22 +2616,39 @@ function generateSchedule() {
              Break the week's total periods into meeting blocks of
              that length (the last one may be shorter if it doesn't
              divide evenly).
+
+             SPECIAL CASE — a regular (non-CSS11/CSS12) subject
+             carrying 7 hours/week always meets as four blocks of
+             2, 2, 2, and 1 hour(s), spread across the 5-day week,
+             regardless of its configured "Minutes per Meeting".
+             (CSS11/CSS12 are handled separately by
+             forcePlaceInPeriodRange and keep the normal
+             remainder-merging behavior, e.g. 2, 2, 2, 3.)
             */
 
-            const meetingLengths = [];
+            const meetingLengths =
+                totalPeriods === 7
+                    ? [2, 2, 2, 1]
+                    : (() => {
 
-            let remainingPeriods = totalPeriods;
+                        const lengths = [];
 
-            while (remainingPeriods > 0) {
+                        let remainingPeriods = totalPeriods;
 
-                const len =
-                    Math.min(periodsPerMeeting, remainingPeriods);
+                        while (remainingPeriods > 0) {
 
-                meetingLengths.push(len);
+                            const len =
+                                Math.min(periodsPerMeeting, remainingPeriods);
 
-                remainingPeriods -= len;
+                            lengths.push(len);
 
-            }
+                            remainingPeriods -= len;
+
+                        }
+
+                        return lengths;
+
+                    })();
 
             /*
              Group meetings by length so equal-length meetings can
