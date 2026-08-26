@@ -1997,6 +1997,418 @@ function buildAssignmentProcessingOrder() {
 }
 
 
+/* =========================================================
+   PRIORITY SCHEDULING RULES
+   (adviser homeroom period + CSS11 fixed block +
+   CSS12 afternoon-only placement)
+   ========================================================= */
+
+/*
+ The morning's class periods are timeslot ids 1, 2, 4, 5 (in
+ that chronological order — id 3 is the recess break). "2nd to
+ 3rd period in the morning" restricts CSS11 to the pair [2, 4] —
+ it can use period 2, period 3, or both together, so an odd
+ weekly-hours total (e.g. 9 hours) still lands exactly on 9
+ periods instead of rounding up to a 10-period double-block
+ pattern.
+*/
+const CSS11_ALLOWED_SLOT_IDS = [2, 4];
+
+/*
+ The afternoon's class periods are timeslot ids 7, 8, 9, 10
+ (id 6 is the lunch break). CSS12 is only required to fall
+ SOMEWHERE in this range (any afternoon period/block), not one
+ fixed pair — unlike CSS11 it isn't pinned to an exact spot.
+*/
+const AFTERNOON_SLOT_IDS = [7, 8, 9, 10];
+
+/*
+ Matches a subject named/coded "CSS11" however it was typed in
+ (e.g. "CSS11", "CSS 11", "css-11"). Falls back to matching a
+ general "CSS" subject taught specifically to a Grade 11
+ section, in case the two grade levels share one subject entry
+ instead of separate CSS11 / CSS12 records.
+*/
+function isCSS11Subject(subject, section) {
+
+    if (!subject) return false;
+
+    const normalize = v =>
+        (v || "").toString().toLowerCase().replace(/[\s_-]/g, "");
+
+    const code = normalize(subject.code);
+    const name = normalize(subject.name);
+
+    if (code === "css11" || name === "css11") return true;
+    if (code.includes("css11") || name.includes("css11")) return true;
+
+    const isGeneralCSS =
+        code === "css" || name.includes("computer systems servicing");
+
+    return (
+        isGeneralCSS &&
+        !!section &&
+        (section.grade || "").toString().includes("11")
+    );
+
+}
+
+function isCSS12Subject(subject, section) {
+
+    if (!subject) return false;
+
+    const normalize = v =>
+        (v || "").toString().toLowerCase().replace(/[\s_-]/g, "");
+
+    const code = normalize(subject.code);
+    const name = normalize(subject.name);
+
+    if (code === "css12" || name === "css12") return true;
+    if (code.includes("css12") || name.includes("css12")) return true;
+
+    const isGeneralCSS =
+        code === "css" || name.includes("computer systems servicing");
+
+    return (
+        isGeneralCSS &&
+        !!section &&
+        (section.grade || "").toString().includes("12")
+    );
+
+}
+
+/*
+ ADVISER HOMEROOM PINNING — every teacher who is a class
+ adviser gets their FIRST class period of the day (the earliest
+ class timeslot, chronologically) reserved for their own
+ advisory section, every school day. Placed straight into
+ db.schedule before anything else, so no other class can be
+ assigned to that teacher, that section, or that room during
+ period 1.
+*/
+function pinAdviserHomeroomPeriods(classSlots, unplaced) {
+
+    const advisoryPeriod = classSlots[0];
+
+    if (!advisoryPeriod) return;
+
+    db.teachers
+        .filter(t => t.isAdviser && t.advisorySectionId)
+        .forEach(teacher => {
+
+            const section =
+                db.sections.find(
+                    s => s.id === teacher.advisorySectionId
+                );
+
+            if (!section) return;
+
+            let room =
+                db.rooms.find(r => r.id === teacher.roomId);
+
+            if (
+                !room ||
+                room.capacity < Number(section.students)
+            ) {
+
+                room =
+                    db.rooms.find(
+                        r => r.capacity >= Number(section.students)
+                    ) || db.rooms[0];
+
+            }
+
+            if (!room) {
+
+                unplaced.push(
+                    `${teacher.name} – Advisory (${section.grade} ${section.name}): no room available for the advisory period`
+                );
+
+                return;
+
+            }
+
+            days.forEach(day => {
+
+                db.schedule.push({
+
+                    id: Date.now() + Math.random(),
+                    day: day,
+                    slotId: advisoryPeriod.id,
+                    teacherId: teacher.id,
+                    subjectId: null,
+                    sectionId: section.id,
+                    roomId: room.id,
+                    isAdvisory: true
+
+                });
+
+            });
+
+        });
+
+}
+
+/*
+ WINDOWS WITHIN AN ALLOWED RANGE — normally a "window" must be
+ physically back-to-back class periods (getConsecutivePeriodWindows
+ already enforces that). When allowNonContiguous is true, this
+ instead treats every period inside allowedSlotIds as eligible to
+ combine into one sitting regardless of a break/recess sitting
+ between them — used for CSS11, where "periods 2 & 3" are only
+ adjacent by numbering, not by the clock (recess falls between
+ them).
+*/
+function getWindowsInRange(
+    classSlots, allowedSlotIds, length, allowNonContiguous
+) {
+
+    if (!allowNonContiguous) {
+
+        return getConsecutivePeriodWindows(length)
+            .filter(w =>
+                w.every(slot => allowedSlotIds.includes(slot.id))
+            );
+
+    }
+
+    const candidateSlots =
+        classSlots.filter(s => allowedSlotIds.includes(s.id));
+
+    const combos = [];
+
+    function combine(start, chosen) {
+
+        if (chosen.length === length) {
+            combos.push(chosen.slice());
+            return;
+        }
+
+        for (let i = start; i < candidateSlots.length; i++) {
+            chosen.push(candidateSlots[i]);
+            combine(i + 1, chosen);
+            chosen.pop();
+        }
+
+    }
+
+    combine(0, []);
+
+    return combos;
+
+}
+
+
+/*
+ FORCE-PLACE A SUBJECT SOMEWHERE WITHIN A RANGE OF PERIODS
+ (e.g. "periods 2–3 in the morning" or "anywhere in the
+ afternoon") — used for both CSS11 and CSS12. It respects the
+ subject's own "Minutes per Meeting" setting to work out meeting
+ length, splits the WEEK'S TOTAL HOURS (assignment.hours) into
+ that many meetings the same way the general scheduler does
+ (with a shorter final meeting if the hours don't divide evenly,
+ e.g. 9 hours), and only searches for windows that fall entirely
+ inside allowedSlotIds, on the allowed days. When
+ allowNonContiguous is true, a "meeting" can combine periods in
+ the range even across a recess/break (see getWindowsInRange).
+*/
+function forcePlaceInPeriodRange(
+    assignment, subject, section, teacher,
+    classSlots, allowedSlotIds, allowedDays, unplaced,
+    allowNonContiguous
+) {
+
+    const isPE = isPESubject(subject);
+
+    const fixedRoom =
+        isPE ? null : resolveTeacherRoom(teacher, subject, section);
+
+    if (!isPE && !fixedRoom) {
+
+        unplaced.push(
+            `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): no suitable classroom available`
+        );
+
+        return;
+
+    }
+
+    const totalPeriods = Number(assignment.hours) || 0;
+
+    if (totalPeriods <= 0) return;
+
+    /*
+     Same "split the week's hours into meeting blocks" logic as
+     generateSchedule() uses generally, so a subject's configured
+     meeting length (e.g. a 120-minute double period) is honored
+     rather than assumed.
+    */
+
+    const periodsPerMeeting =
+        Math.max(
+            1,
+            Math.round((Number(subject.minutes) || 60) / 60)
+        );
+
+    /*
+     LONGEST BLOCK ACTUALLY AVAILABLE within this allowed range
+     — e.g. the afternoon's 4 back-to-back periods can host up
+     to a 4-period block. With allowNonContiguous, CSS11's
+     "periods 2 & 3" range can host up to a 2-period block (the
+     two of them together) even though recess splits them; the
+     cap is simply how many periods the range contains. Used
+     below to decide whether a leftover remainder hour can be
+     folded into the last meeting instead of becoming its own
+     separate short one.
+    */
+
+    const maxWindowLength =
+        allowNonContiguous
+            ? allowedSlotIds.length
+            : (() => {
+
+                for (
+                    let len = allowedSlotIds.length;
+                    len >= 1;
+                    len--
+                ) {
+
+                    const fits =
+                        getConsecutivePeriodWindows(len).some(w =>
+                            w.every(slot => allowedSlotIds.includes(slot.id))
+                        );
+
+                    if (fits) return len;
+
+                }
+
+                return 1;
+
+            })();
+
+    const meetingLengths = [];
+
+    const fullMeetings =
+        Math.floor(totalPeriods / periodsPerMeeting);
+
+    const remainder =
+        totalPeriods % periodsPerMeeting;
+
+    for (let i = 0; i < fullMeetings; i++) {
+        meetingLengths.push(periodsPerMeeting);
+    }
+
+    if (remainder > 0) {
+
+        /*
+         Fold the leftover hour(s) into the LAST meeting instead
+         of tacking on a separate short meeting, whenever the
+         range can physically fit the bigger block — e.g. 9
+         hours at 2-hour meetings becomes [2, 2, 2, 3] (4
+         meeting days) rather than [2, 2, 2, 2, 1] (5 meeting
+         days), as long as a 3-period window actually exists in
+         this part of the day.
+        */
+
+        const canMergeIntoLast =
+            meetingLengths.length > 0 &&
+            (periodsPerMeeting + remainder) <= maxWindowLength;
+
+        if (canMergeIntoLast) {
+            meetingLengths[meetingLengths.length - 1] += remainder;
+        } else {
+            meetingLengths.push(remainder);
+        }
+
+    }
+
+    const lengthGroups = {};
+
+    meetingLengths.forEach(len => {
+        lengthGroups[len] = (lengthGroups[len] || 0) + 1;
+    });
+
+    const sortedLengths =
+        Object.keys(lengthGroups)
+            .map(Number)
+            .sort((a, b) => b - a);
+
+    sortedLengths.forEach(length => {
+
+        const count = lengthGroups[length];
+
+        const windows =
+            getWindowsInRange(
+                classSlots, allowedSlotIds, length, allowNonContiguous
+            );
+
+        if (windows.length === 0) {
+
+            unplaced.push(
+                `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): no ${length}-period window available in the required part of the day`
+            );
+
+            return;
+
+        }
+
+        let placed = 0;
+
+        for (
+            let attempt = 0;
+            attempt < windows.length && placed < count;
+            attempt++
+        ) {
+
+            const window = windows[attempt];
+
+            for (const day of allowedDays) {
+
+                if (placed >= count) break;
+
+                const room =
+                    resolveWindowRoom(
+                        teacher, subject, section,
+                        isPE, fixedRoom, day, window
+                    );
+
+                if (!room) continue;
+
+                window.forEach(slot => {
+
+                    db.schedule.push({
+
+                        id: Date.now() + Math.random(),
+                        day: day,
+                        slotId: slot.id,
+                        teacherId: teacher.id,
+                        subjectId: subject.id,
+                        sectionId: section.id,
+                        roomId: room.id
+
+                    });
+
+                });
+
+                placed++;
+
+            }
+
+        }
+
+        if (placed < count) {
+
+            unplaced.push(
+                `${teacher.name} – ${subject.name} (${section.grade} ${section.name}): only ${placed} of ${count} ${length}-period meeting(s) could be placed in the required part of the day`
+            );
+
+        }
+
+    });
+
+}
+
+
 function generateSchedule() {
 
     if (
@@ -2039,7 +2451,90 @@ function generateSchedule() {
 
         const unplaced = [];
 
-        const processingOrder = buildAssignmentProcessingOrder();
+        /*
+         PRIORITY PLACEMENT PASS — runs before the general
+         assignment loop so these three rules always win the
+         slots they need, instead of competing for them:
+
+           1. Every class adviser's FIRST period of the day is
+              reserved for their own advisory section (homeroom),
+              every day of the week.
+           2. Any "CSS11" subject is locked into the 2nd–3rd
+              periods of the morning (a back-to-back block),
+              with the number of weekly meetings driven by its
+              total weekly hours.
+           3. Any "CSS12" subject is confined to the afternoon
+              (any afternoon period/block, using the subject's
+              own configured meeting length), on every day
+              EXCEPT Monday, again driven by its total weekly
+              hours.
+
+         Both this pass and the pinned advisory entries write
+         straight into db.schedule, so the normal teacher /
+         section / room availability checks used later on
+         (resolveWindowRoom, etc.) automatically treat these
+         slots as already taken.
+        */
+
+        pinAdviserHomeroomPeriods(classSlots, unplaced);
+
+        const handledAssignmentIds = new Set();
+
+        db.assignments.forEach(assignment => {
+
+            const subject =
+                db.subjects.find(
+                    s => s.id === assignment.subjectId
+                );
+
+            const section =
+                db.sections.find(
+                    s => s.id === assignment.sectionId
+                );
+
+            const teacher =
+                db.teachers.find(
+                    t => t.id === assignment.teacherId
+                );
+
+            if (!subject || !section || !teacher) return;
+
+            if (isCSS11Subject(subject, section)) {
+
+                forcePlaceInPeriodRange(
+                    assignment, subject, section, teacher,
+                    classSlots,
+                    CSS11_ALLOWED_SLOT_IDS,
+                    days,
+                    unplaced,
+                    true // allowNonContiguous — periods 2 & 3 can combine across the recess
+                );
+
+                handledAssignmentIds.add(assignment.id);
+
+            } else if (isCSS12Subject(subject, section)) {
+
+                forcePlaceInPeriodRange(
+                    assignment, subject, section, teacher,
+                    classSlots,
+                    AFTERNOON_SLOT_IDS,
+                    days.filter(d => d !== "Monday"),
+                    unplaced,
+                    false // afternoon periods are already back-to-back
+                );
+
+                handledAssignmentIds.add(assignment.id);
+
+            }
+
+        });
+
+        const processingOrder =
+            buildAssignmentProcessingOrder()
+                .filter(
+                    ({ assignment }) =>
+                        !handledAssignmentIds.has(assignment.id)
+                );
 
         processingOrder.forEach(({ assignment, originalIndex }) => {
 
@@ -2821,16 +3316,21 @@ function renderSchedule() {
                         r => r.id === item.roomId
                     );
 
+                const itemClass =
+                    item.isAdvisory
+                        ? "schedule-item schedule-item-advisory"
+                        : "schedule-item";
+
                 cell += `
 
-                    <div class="schedule-item">
+                    <div class="${itemClass}">
 
                         <strong>
-                            ${subject?.code || "Subject"}
+                            ${item.isAdvisory ? "ADVISORY" : (subject?.code || "Subject")}
                         </strong>
 
                         <span>
-                            ${subject?.name || ""}
+                            ${item.isAdvisory ? "Homeroom / Advisory" : (subject?.name || "")}
                         </span>
 
                         <span>
