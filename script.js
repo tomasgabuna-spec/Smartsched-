@@ -30,6 +30,14 @@ let db = JSON.parse(localStorage.getItem("smartschedDB")) || {
         teacherFreePeriods: 0.80
     },
 
+    /*
+     AUTO REPAIR — when on, the Conflicts page regenerates the
+     schedule by itself the moment it finds a conflict or an
+     unplaced assignment, instead of waiting for someone to click
+     "Apply Automatic Repair".
+    */
+    autoRepair: false,
+
     timeslots: [
         { id: 1, time: "7:30–8:30", type: "class" },
         { id: 2, time: "8:30–9:30", type: "class" },
@@ -62,6 +70,17 @@ if (!db.objectives) {
     };
 
 }
+
+/*
+ Backfill for anyone with existing saved data from before Auto
+ Repair existed.
+*/
+if (typeof db.autoRepair !== "boolean") {
+
+    db.autoRepair = false;
+
+}
+
 
 
 /* =========================================================
@@ -3823,6 +3842,51 @@ function renderConflicts() {
     const unplaced =
         db.unplaced || [];
 
+    /*
+     AUTO REPAIR — see the block above saveSettings() for the
+     full explanation. Only fires when the inputs feeding the
+     generator have actually changed since the last automatic
+     attempt, so it can't loop forever against an unfixable
+     shortage (e.g. genuinely no free Computer Lab slot left).
+    */
+
+    if (
+        db.autoRepair &&
+        (conflicts.total > 0 || unplaced.length > 0)
+    ) {
+
+        const signature =
+            getSchedulingInputsSignature();
+
+        if (signature !== lastAutoRepairSignature) {
+
+            lastAutoRepairSignature = signature;
+
+            container.innerHTML = `
+
+                <div class="card empty-state">
+
+                    <div>⏳</div>
+
+                    <h3>Auto Repair running…</h3>
+
+                    <p>
+                        SMARTSCHED found a conflict and is
+                        regenerating the schedule automatically.
+                    </p>
+
+                </div>
+
+            `;
+
+            generateSchedule();
+
+            return;
+
+        }
+
+    }
+
     container.innerHTML = "";
 
     if (conflicts.total === 0 && unplaced.length === 0) {
@@ -4708,12 +4772,86 @@ function saveSettings() {
 
 
 /* =========================================================
+   AUTO REPAIR
+   When db.autoRepair is on, renderConflicts() (below) fires
+   generateSchedule() by itself the instant it finds a conflict
+   or an unplaced assignment — no click needed.
+
+   Regenerating is deterministic given the same inputs, so
+   re-running it against data that hasn't changed would just
+   reproduce the exact same conflicts forever. lastAutoRepairSignature
+   guards against that: it's a snapshot of everything that feeds
+   the generator (teachers, subjects, sections, rooms,
+   assignments, objective weights), and auto repair only fires
+   again once that snapshot actually changes — e.g. after you add
+   a room or delete a bad assignment — instead of looping.
+*/
+
+let lastAutoRepairSignature = null;
+
+function getSchedulingInputsSignature() {
+
+    return JSON.stringify({
+        teachers: db.teachers,
+        subjects: db.subjects,
+        sections: db.sections,
+        rooms: db.rooms,
+        assignments: db.assignments,
+        objectives: db.objectives
+    });
+
+}
+
+function toggleAutoRepair() {
+
+    const el =
+        document.getElementById("autoRepairToggle");
+
+    if (!el) return;
+
+    db.autoRepair = el.checked;
+
+    saveDB();
+
+    toast(
+        db.autoRepair
+            ? "Auto Repair turned on."
+            : "Auto Repair turned off."
+    );
+
+    /*
+     If it was just switched on and there are conflicts sitting
+     on screen right now, don't make the user wait for the next
+     data change to see it kick in.
+    */
+
+    if (db.autoRepair) {
+        renderConflicts();
+    }
+
+}
+
+
+/* =========================================================
    RENDER ALL
    ========================================================= */
+
+function initSettingsControls() {
+
+    const el =
+        document.getElementById("autoRepairToggle");
+
+    if (el) {
+        el.checked = !!db.autoRepair;
+    }
+
+}
 
 function renderAll() {
 
     initObjectiveSliders();
+
+    initSettingsControls();
 
     updateDashboard();
 
